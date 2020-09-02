@@ -53,6 +53,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 		orig    string
 	}{
 		{newLoadTask(baseAddr+"/index.html", 1, 0, false, nil, 1), false, "", "test/index.html"},
+		{newLoadTask(baseAddr+"/1.gz", 1, 0, false, nil, 1), false, "", "test/1.gz"},          // Read file
 		{newLoadTask(baseAddr+"/test", 1, 0, false, nil, 1), false, "", "test/index.html"},    // check redirect
 		{newLoadTask(baseAddr+"/not_found.html", 1, 0, false, nil, 1), true, "Not found", ""}, // not found
 	}
@@ -70,9 +71,29 @@ func TestDownloader_httpLoad(t *testing.T) {
 				if err != nil {
 					t.Errorf("Downloader.httpLoad() compare error '%v'", err)
 				} else if !equal {
-					t.Errorf("Downloader.httpLoad() result file mismatched")
+					t.Errorf("Downloader.httpLoad() result file mismatched %s", d.outdir+"/"+tt.task.fileName)
 				}
 			}
 		})
 	}
 }
+
+// func TestDownloader_htmlExtractLinks(t *testing.T) {
+// 	tests := []struct {
+// 		path    string
+// 		wantErr bool
+// 	}{
+// 		{"index.html", false},
+// 	}
+
+// 	d := NewDownloader(FlatMode, 1, time.Second, 2)
+// 	d.outdir = "test"
+// 	for _, tt := range tests {
+// 		t.Run(tt.path, func(t *testing.T) {
+// 			task := task{fileName: tt.path}
+// 			if err := d.htmlExtractLinks(&task); (err != nil) != tt.wantErr {
+// 				t.Errorf("Downloader.htmlExtractLinks() error = %v, wantErr %v", err, tt.wantErr)
+// 			}
+// 		})
+// 	}
+// }

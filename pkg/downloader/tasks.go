@@ -142,6 +142,7 @@ func (d *Downloader) genTaskFileName(task *task) error {
 
 func (d *Downloader) recheckTask(task *task) {
 	// TODO: reparse files for load after change levels
+
 	if !d.failed {
 		d.failed = true
 	}
