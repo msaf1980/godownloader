@@ -38,7 +38,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 	dir := tmpdir + "/" + "out"
 	saveMode := FlatMode
 	d := NewDownloader(saveMode, 1, time.Second, 2)
-	d.AddRootURL("http://127.0.0.1", 1, 0, true, nil)
+	d.AddRootURL("http://127.0.0.1/", 2, 0, true, nil)
 	d.NewLoad(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -53,24 +53,53 @@ func TestDownloader_httpLoad(t *testing.T) {
 		wantErr bool
 		errStr  string
 		orig    string
+		links   map[string]bool
 	}{
-		{newLoadTask(baseAddr+"/index.html", 1, 0, false, nil, 1), false, "", "test/index.html.tpl"},
-		{newLoadTask(baseAddr+"/1.gz", 1, 0, false, nil, 1), false, "", "test/1.gz"},           // Read file
-		{newLoadTask(baseAddr+"/test", 1, 0, false, nil, 1), false, "", "test/index.html.tpl"}, // check redirect
-		{newLoadTask(baseAddr+"/link1.html", 1, 0, false, nil, 1), false, "", "test/link1.html.tpl"},
-		{newLoadTask(baseAddr+"/link2.html", 1, 0, false, nil, 1), false, "", "test/link2.html.tpl"},
-		{newLoadTask(baseAddr+"/not_found.html", 1, 0, false, nil, 1), true, "Not found", ""}, // not found
+		{newLoadTask(
+			baseAddr+"/index.html", 2, 0, false, nil, 1), false, "", "test/index.html.tpl",
+			map[string]bool{
+				"http://127.0.0.1/":          true, // root URL, not downloaded at this step
+				baseAddr + "/link1.html":     true,
+				baseAddr + "/not_found.html": true,
+				baseAddr + "/style.css":      true, baseAddr + "/1.gif": true, baseAddr + "/1.gz": true,
+			},
+		},
+		{
+			newLoadTask(baseAddr+"/1.gz", 1, 0, false, nil, 1), false, "", "test/1.gz",
+			map[string]bool{},
+		}, // Read file
+		{
+			newLoadTask(baseAddr+"/test", 1, 0, false, nil, 1), false, "", "test/index.html.tpl",
+			map[string]bool{},
+		}, // check redirect
+		{
+			newLoadTask(baseAddr+"/link1.html", 2, 0, false, nil, 1), false, "", "test/link1.html.tpl",
+			map[string]bool{
+				"http://127.0.0.1/":      true, // root URL, not downloaded at this step
+				baseAddr + "/index.html": true, baseAddr + "/link1.html": true, baseAddr + "/link2.html": true,
+				baseAddr + "/not_found.html": true,
+				baseAddr + "/style.css":      true, baseAddr + "/1.gif": true, baseAddr + "/1.gz": true,
+			},
+		},
+		{
+			newLoadTask(baseAddr+"/link2.html", 1, 0, false, nil, 1), false, "", "test/link2.html.tpl",
+			map[string]bool{},
+		},
+		{
+			newLoadTask(baseAddr+"/not_found.html", 1, 0, false, nil, 1), true, "Not found", "",
+			map[string]bool{},
+		}, // not found
 	}
 	for _, tt := range tests {
 		t.Run(tt.task.url, func(t *testing.T) {
 			var err error
 			if err = d.httpLoad(tt.task); (err != nil) != tt.wantErr {
-				t.Errorf("Downloader.httpLoad() error = '%v', wantErr '%v'", err, tt.wantErr)
+				t.Fatalf("Downloader.httpLoad() error = '%v', wantErr '%v'", err, tt.wantErr)
 			}
 			if err != nil && len(tt.errStr) > 0 && err.Error() != tt.errStr {
-				t.Errorf("Downloader.httpLoad() error = '%v', wantErr '%s'", err, tt.errStr)
+				t.Fatalf("Downloader.httpLoad() error = '%v', wantErr '%s'", err, tt.errStr)
 			}
-			if err == nil && len(tt.orig) > 0 {
+			if len(tt.orig) > 0 {
 				if strings.HasSuffix(tt.orig, ".tpl") {
 					result, err := ioutil.ReadFile(d.outdir + "/" + tt.task.fileName)
 					if err != nil {
@@ -79,13 +108,14 @@ func TestDownloader_httpLoad(t *testing.T) {
 					resultHTML := string(result)
 					data, err := ioutil.ReadFile(tt.orig)
 					if err != nil {
-						t.Fatalf("Downloader.httpLoad() load template error '%v'", err)
-					}
-					want := strings.ReplaceAll(string(data), "{{ Host }}", baseAddr)
-					if want != resultHTML {
-						dmp := diffmatchpatch.New()
-						diffs := dmp.DiffMain(want, resultHTML, false)
-						t.Errorf("Downloader.httpLoad() result html file mismatched %s, diff\n%s", d.outdir+"/"+tt.task.fileName, diffs)
+						t.Errorf("Downloader.httpLoad() load template error '%v'", err)
+					} else {
+						want := strings.ReplaceAll(string(data), "{{ Host }}", baseAddr)
+						if want != resultHTML {
+							dmp := diffmatchpatch.New()
+							diffs := dmp.DiffMain(want, resultHTML, false)
+							t.Errorf("Downloader.httpLoad() result html file mismatched %s, diff\n%s", d.outdir+"/"+tt.task.fileName, diffs)
+						}
 					}
 				} else {
 					equal, err := cmp.CompareFile(tt.orig, d.outdir+"/"+tt.task.fileName)
@@ -93,6 +123,22 @@ func TestDownloader_httpLoad(t *testing.T) {
 						t.Errorf("Downloader.httpLoad() compare error '%v'", err)
 					} else if !equal {
 						t.Errorf("Downloader.httpLoad() result file mismatched %s", d.outdir+"/"+tt.task.fileName)
+					}
+				}
+			}
+
+			if len(tt.links) > 0 {
+				for _, task := range d.processed {
+					_, ok := tt.links[task.url]
+					if !ok {
+						t.Errorf("Downloader.httpLoad() link %s extracted, but required", task.url)
+					}
+				}
+
+				for url := range tt.links {
+					_, ok := d.processed[url]
+					if !ok {
+						t.Errorf("Downloader.httpLoad() link %s not extracted", url)
 					}
 				}
 			}

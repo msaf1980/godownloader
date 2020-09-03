@@ -19,7 +19,6 @@
     <a href="1.gz" tppabs="{{ Host }}/1.gz">Archive</a><br>
     <a href="link1.html#1" tppabs="{{ Host }}/link1.html#1">Link 1#1</a><br>
     <a href="link1.html#2" tppabs="{{ Host }}/link1.html#2">Link 1#2</a><br>
-    <a href="link2.html#3" tppabs="{{ Host }}/link2.html#3">Link 2#3</a><br>
     <a href="not_found.html#1" tppabs="{{ Host }}/not_found.html#1">Link not found</a><br>
   </body>
 </html>

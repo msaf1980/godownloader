@@ -200,7 +200,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(href, baseHost)
 							}
 						}
-						if !d.addURL(absURL, typ, rel, task) {
+						if !d.addURL(absURL, typ, rel, d.retry, task, baseHost) {
 							e.SetAttribute("href", absURL)
 						}
 					}
@@ -220,7 +220,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(href, baseHost)
 							}
 						}
-						if !d.addURL(absURL, "", "", task) {
+						if !d.addURL(absURL, "", "", d.retry, task, baseHost) {
 							e.SetAttribute("href", absURL)
 						}
 					}
@@ -240,7 +240,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(src, baseHost)
 							}
 						}
-						if !d.addURL(absURL, "", "", task) {
+						if !d.addURL(absURL, "", "", d.retry, task, baseHost) {
 							e.SetAttribute("src", absURL)
 						}
 					}

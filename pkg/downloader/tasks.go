@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/msaf1980/godownloader/pkg/urlutils"
+
 	"github.com/goware/urlx"
 	"github.com/rs/zerolog/log"
 )
@@ -15,13 +17,13 @@ type Protocol int8
 
 const (
 	Unsuppoted Protocol = iota
-	Http
+	HTTP
 )
 
 func StringToProto(s string) Protocol {
 	switch s {
 	case "http", "https":
-		return Http
+		return HTTP
 	default:
 		return Unsuppoted
 	}
@@ -152,20 +154,20 @@ func (d *Downloader) recheckTask(task *task) {
 func (d *Downloader) runTask(task *task) {
 	if task.success {
 		// already doanload, reload and check
-		if task.protocol == Http && task.contentType == "text/html" {
+		if task.protocol == HTTP && task.contentType == "text/html" {
 			d.recheckTask(task)
 		}
 	} else if task.try > 0 {
 		var err error
 		switch task.protocol {
-		case Http:
+		case HTTP:
 			err = d.httpLoad(task)
 			if err == nil && task.contentType == "text/html" {
 				d.recheckTask(task)
 			}
 		default:
 			task.try = 0
-			log.Error().Str("url", task.url).Str("file", task.fileName).Msg("protocol not supported")
+			log.Warn().Str("url", task.url).Str("file", task.fileName).Msg("protocol not supported")
 			return
 		}
 		if err != nil {
@@ -184,12 +186,52 @@ func (d *Downloader) runTask(task *task) {
 	}
 }
 
-func (d *Downloader) addURL(url string, contentType string, rel string, baseTask *task) bool {
+func level(url string, baseTask *task, baseHost string) (int, int) {
+	level := baseTask.level
+	extLevel := baseTask.extLevel
+	host, _ := urlutils.SplitURL(url)
+	if host == baseHost {
+		level--
+	} else {
+		// TODO: secureAs
+		// TODO: depth (go to N levels down on same site)
+		level = extLevel
+		extLevel--
+	}
+	return level, extLevel
+}
+
+func (d *Downloader) addURL(url string, contentType string, rel string, retry int, baseTask *task, baseHost string) bool {
 	if contentType == "application/rss+xml" || rel == "alternate" || rel == "search" || rel == "canonical" {
 		return false
 	}
+	stripURL := urlutils.StripAnchor(url)
+	queued := false
 	d.processLock.Lock()
-
+	task, ok := d.processed[stripURL]
+	if ok {
+		level, extLevel := level(stripURL, baseTask, baseHost)
+		if task.level < level {
+			task.level = level
+			queued = true
+		}
+		if task.extLevel < extLevel {
+			task.extLevel = extLevel
+			queued = true
+		}
+	} else {
+		level, extLevel := level(stripURL, baseTask, baseHost)
+		if level == 0 {
+			d.processLock.Unlock()
+			return false
+		}
+		task = newLoadTask(stripURL, level, extLevel, baseTask.secureAs, baseTask.protocols, d.retry)
+		d.setTask(task)
+		queued = true
+	}
 	d.processLock.Unlock()
+	if queued {
+		d.queue.Put(task)
+	}
 	return true
 }

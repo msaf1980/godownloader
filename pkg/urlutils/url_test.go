@@ -29,7 +29,7 @@ func TestSplitURL(t *testing.T) {
 		wantPath string
 	}{
 		{"http://test.int", "http://test.int", "/"},
-		{"http://test.int/", "http://test.int", "/"},
+		{"https://test.int/", "https://test.int", "/"},
 		{"test.int/", "", "test.int/"},
 		{"index.html", "", "index.html"},
 		{"/index.html", "", "/index.html"},
@@ -38,6 +38,36 @@ func TestSplitURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {
 			host, path := SplitURL(tt.url)
+			if host != tt.wantHost {
+				t.Errorf("SplitURL() host got = %v, want %v", host, tt.wantHost)
+			}
+			if path != tt.wantPath {
+				t.Errorf("SplitURL() path = %v, want %v", path, tt.wantPath)
+			}
+		})
+	}
+}
+
+func TestSplitURL3(t *testing.T) {
+	tests := []struct {
+		url        string
+		wantScheme string
+		wantHost   string
+		wantPath   string
+	}{
+		{"http://test.int", "http", "test.int", "/"},
+		{"https://test.int/", "https", "test.int", "/"},
+		{"test.int/", "", "", "test.int/"},
+		{"index.html", "", "", "index.html"},
+		{"/index.html", "", "", "/index.html"},
+		{"/1/index.html", "", "", "/1/index.html"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			scheme, host, path := SplitURL3(tt.url)
+			if scheme != tt.wantScheme {
+				t.Errorf("SplitURL() scheme got = %v, want %v", scheme, tt.wantScheme)
+			}
 			if host != tt.wantHost {
 				t.Errorf("SplitURL() host got = %v, want %v", host, tt.wantHost)
 			}

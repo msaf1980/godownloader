@@ -160,6 +160,7 @@ func (d *Downloader) AddRootURL(url string, level int, extLevel int, secureAs bo
 		d.processLock.Lock()
 		d.root.PushBack(task)
 		d.queue.Put(task)
+		d.setTask(task)
 		d.processLock.Unlock()
 	}
 	return d
