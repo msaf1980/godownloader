@@ -183,3 +183,13 @@ func (d *Downloader) runTask(task *task) {
 		}
 	}
 }
+
+func (d *Downloader) addURL(url string, contentType string, rel string, baseTask *task) bool {
+	if contentType == "application/rss+xml" || rel == "alternate" || rel == "search" || rel == "canonical" {
+		return false
+	}
+	d.processLock.Lock()
+
+	d.processLock.Unlock()
+	return true
+}

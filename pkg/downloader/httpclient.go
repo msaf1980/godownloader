@@ -14,6 +14,7 @@ import (
 	"github.com/calbucci/go-htmlparser"
 	"github.com/franela/goreq"
 	"github.com/msaf1980/godownloader/pkg/htmlutils"
+	"github.com/msaf1980/godownloader/pkg/urlutils"
 )
 
 func (d *Downloader) httpLoad(task *task) error {
@@ -148,6 +149,8 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 	// 	}
 	// }
 
+	baseHost, _ := urlutils.SplitURL(task.url)
+
 	var newHTML bytes.Buffer
 	r, _, err := htmlutils.DecodeHTMLBytes(data, "")
 	if err != nil {
@@ -184,19 +187,64 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 			case "link":
 				href, ok := e.GetAttributeValue("href")
 				if ok {
-					typ, _ := e.GetAttributeValue("type")
-					rel, _ := e.GetAttributeValue("rel")
-					fmt.Printf("link href='%s' type='%s' rel='%s'\n", href, typ, rel)
+					if len(href) > 0 && href[0] != '#' {
+						typ, _ := e.GetAttributeValue("type")
+						rel, _ := e.GetAttributeValue("rel")
+						var absURL string
+						if firstParse {
+							absURL = urlutils.AbsURL(href, baseHost)
+							e.SetAttribute("tppabs", absURL)
+						} else {
+							absURL, ok = e.GetAttributeValue("tppabs")
+							if !ok {
+								absURL = urlutils.AbsURL(href, baseHost)
+							}
+						}
+						if !d.addURL(absURL, typ, rel, task) {
+							e.SetAttribute("href", absURL)
+						}
+					}
+					//fmt.Printf("link href='%s' type='%s' rel='%s'\n", absURL, typ, rel)
 				}
 			case "a":
 				href, ok := e.GetAttributeValue("href")
 				if ok {
-					fmt.Printf("a href='%s'\n", href)
+					if len(href) > 0 && href[0] != '#' {
+						var absURL string
+						if firstParse {
+							absURL = urlutils.AbsURL(href, baseHost)
+							e.SetAttribute("tppabs", absURL)
+						} else {
+							absURL, ok = e.GetAttributeValue("tppabs")
+							if !ok {
+								absURL = urlutils.AbsURL(href, baseHost)
+							}
+						}
+						if !d.addURL(absURL, "", "", task) {
+							e.SetAttribute("href", absURL)
+						}
+					}
+					//fmt.Printf("a href='%s'\n", absURL)
 				}
 			case "iframe", "img", "script":
 				src, ok := e.GetAttributeValue("src")
 				if ok {
-					fmt.Printf("%s src='%s'\n", e.TagName, src)
+					if len(src) > 0 && src[0] != '#' {
+						var absURL string
+						if firstParse {
+							absURL = urlutils.AbsURL(src, baseHost)
+							e.SetAttribute("tppabs", absURL)
+						} else {
+							absURL, ok = e.GetAttributeValue("tppabs")
+							if !ok {
+								absURL = urlutils.AbsURL(src, baseHost)
+							}
+						}
+						if !d.addURL(absURL, "", "", task) {
+							e.SetAttribute("src", absURL)
+						}
+					}
+					//fmt.Printf("%s src='%s'\n", e.TagName, absURL)
 				}
 			}
 			if tags > 0 {

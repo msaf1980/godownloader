@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/udhos/equalfile"
 )
 
@@ -52,9 +54,11 @@ func TestDownloader_httpLoad(t *testing.T) {
 		errStr  string
 		orig    string
 	}{
-		{newLoadTask(baseAddr+"/index.html", 1, 0, false, nil, 1), false, "", "test/index.html"},
-		{newLoadTask(baseAddr+"/1.gz", 1, 0, false, nil, 1), false, "", "test/1.gz"},          // Read file
-		{newLoadTask(baseAddr+"/test", 1, 0, false, nil, 1), false, "", "test/index.html"},    // check redirect
+		{newLoadTask(baseAddr+"/index.html", 1, 0, false, nil, 1), false, "", "test/index.html.tpl"},
+		{newLoadTask(baseAddr+"/1.gz", 1, 0, false, nil, 1), false, "", "test/1.gz"},           // Read file
+		{newLoadTask(baseAddr+"/test", 1, 0, false, nil, 1), false, "", "test/index.html.tpl"}, // check redirect
+		{newLoadTask(baseAddr+"/link1.html", 1, 0, false, nil, 1), false, "", "test/link1.html.tpl"},
+		{newLoadTask(baseAddr+"/link2.html", 1, 0, false, nil, 1), false, "", "test/link2.html.tpl"},
 		{newLoadTask(baseAddr+"/not_found.html", 1, 0, false, nil, 1), true, "Not found", ""}, // not found
 	}
 	for _, tt := range tests {
@@ -67,11 +71,29 @@ func TestDownloader_httpLoad(t *testing.T) {
 				t.Errorf("Downloader.httpLoad() error = '%v', wantErr '%s'", err, tt.errStr)
 			}
 			if err == nil && len(tt.orig) > 0 {
-				equal, err := cmp.CompareFile(tt.orig, d.outdir+"/"+tt.task.fileName)
-				if err != nil {
-					t.Errorf("Downloader.httpLoad() compare error '%v'", err)
-				} else if !equal {
-					t.Errorf("Downloader.httpLoad() result file mismatched %s", d.outdir+"/"+tt.task.fileName)
+				if strings.HasSuffix(tt.orig, ".tpl") {
+					result, err := ioutil.ReadFile(d.outdir + "/" + tt.task.fileName)
+					if err != nil {
+						t.Fatalf("Downloader.httpLoad() load error '%v'", err)
+					}
+					resultHTML := string(result)
+					data, err := ioutil.ReadFile(tt.orig)
+					if err != nil {
+						t.Fatalf("Downloader.httpLoad() load template error '%v'", err)
+					}
+					want := strings.ReplaceAll(string(data), "{{ Host }}", baseAddr)
+					if want != resultHTML {
+						dmp := diffmatchpatch.New()
+						diffs := dmp.DiffMain(want, resultHTML, false)
+						t.Errorf("Downloader.httpLoad() result html file mismatched %s, diff\n%s", d.outdir+"/"+tt.task.fileName, diffs)
+					}
+				} else {
+					equal, err := cmp.CompareFile(tt.orig, d.outdir+"/"+tt.task.fileName)
+					if err != nil {
+						t.Errorf("Downloader.httpLoad() compare error '%v'", err)
+					} else if !equal {
+						t.Errorf("Downloader.httpLoad() result file mismatched %s", d.outdir+"/"+tt.task.fileName)
+					}
 				}
 			}
 		})
