@@ -173,7 +173,7 @@ func (d *Downloader) startN(thread string) {
 				}
 				t := v.(*task)
 				// check file in processed
-				task, exist := d.AddTask(t)
+				task, exist := d.addTask(t)
 				if exist {
 					recheck := task.UpdateLevel(t.Level(), t.ExtLevel())
 					if task.success && !recheck {

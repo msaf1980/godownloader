@@ -124,7 +124,7 @@ func (d *Downloader) taskByFileName(fileName string) *task {
 // 	d.processed.Set(task.url, task)
 // }
 
-func (d *Downloader) AddTask(t *task) (*task, bool) {
+func (d *Downloader) addTask(t *task) (*task, bool) {
 	p, exist := d.processed.GetOrInsert(t.url, t)
 	return p.(*task), exist
 }
@@ -286,7 +286,7 @@ func (d *Downloader) AddRootURL(url string, level int32, extLevel int32, secureA
 		log.Error().Str("url", task.url).Msg("protocol not supported")
 	} else {
 		//d.processLock.Lock()
-		_, exist := d.AddTask(task)
+		_, exist := d.addTask(task)
 		if exist {
 			//d.processLock.Unlock()
 			log.Warn().Str("url", task.url).Msg("already added")
@@ -311,7 +311,7 @@ func (d *Downloader) addURL(url string, pageContent bool, retry int, baseTask *t
 	t := d.taskByURL(stripURL)
 	if t == nil {
 		t = newLoadTask(stripURL, level, extLevel, baseTask.secureAs, baseTask.protocols, d.retry)
-		t, exist = d.AddTask(t) // recheck, may be added by concurrent
+		t, exist = d.addTask(t) // recheck, may be added by concurrent
 		if !exist {
 			queued = true
 		}
