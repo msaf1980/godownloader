@@ -14,7 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Proto
+// Protocol
 type Protocol int8
 
 const (
@@ -22,7 +22,7 @@ const (
 	HTTP
 )
 
-func StringToProto(s string) Protocol {
+func StringToProtocol(s string) Protocol {
 	switch s {
 	case "http", "https":
 		return HTTP
@@ -34,7 +34,7 @@ func StringToProto(s string) Protocol {
 func URLProtocol(url string) Protocol {
 	i := strings.Index(url, "://")
 	if i > 0 {
-		return StringToProto(url[0:i])
+		return StringToProtocol(url[0:i])
 	}
 	return Unsuppoted
 }
@@ -44,7 +44,6 @@ type task struct {
 	protocol  Protocol
 	level     int32 // download level (from same site)
 	extLevel  int32 // download level (from external sites)
-	secureAs  bool  // cast secure and unsecure links to one site (no external)
 	protocols *map[Protocol]bool
 
 	fileName    string // relative filename (blank if no try downloads else)
@@ -92,21 +91,17 @@ func (task *task) ExtLevel() int32 {
 }
 
 // newLoadTask create new load task
-func newLoadTask(url string, level int32, extLevel int32, secureAs bool, protocols *map[Protocol]bool, retry int) *task {
+func newLoadTask(url string, level int32, extLevel int32, retry int) *task {
 	return &task{url: url, level: level, extLevel: extLevel,
-		secureAs: secureAs, protocol: URLProtocol(url), protocols: protocols,
-		success: false, try: retry,
+		protocol: URLProtocol(url),
+		success:  false, try: retry,
 	}
-}
-
-func (t *task) setFileName(fileName string) {
-	t.fileName = fileName
 }
 
 // internal method, need lock filesLock before
 func (d *Downloader) _setTaskFileName(task *task, path string) {
 	if path != "" {
-		task.setFileName(path)
+		task.fileName = path
 		d.files.Set(task.fileName, task)
 	}
 }
@@ -281,7 +276,7 @@ func (d *Downloader) AddRootURL(url string, level int32, extLevel int32, secureA
 	if level == 0 {
 		return d
 	}
-	task := newLoadTask(url, level, extLevel, secureAs, protocols, d.retry)
+	task := newLoadTask(url, level, extLevel, d.retry)
 	if task.protocol == Unsuppoted {
 		log.Error().Str("url", task.url).Msg("protocol not supported")
 	} else {
@@ -310,7 +305,7 @@ func (d *Downloader) addURL(url string, pageContent bool, retry int, baseTask *t
 
 	t := d.taskByURL(stripURL)
 	if t == nil {
-		t = newLoadTask(stripURL, level, extLevel, baseTask.secureAs, baseTask.protocols, d.retry)
+		t = newLoadTask(stripURL, level, extLevel, d.retry)
 		t, exist = d.addTask(t) // recheck, may be added by concurrent
 		if !exist {
 			queued = true
