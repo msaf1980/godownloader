@@ -53,7 +53,7 @@ type task struct {
 	size        int64 // size from header
 	try         int   // retry count - stop on 0 or success
 
-	lock      uint32     // set 1 for hold task during download/parse
+	lock      uint32     // atomic set 1 for hold task during download/parse (TryLock) and relase when done (Unlock)
 	lockLevel sync.Mutex // set 1 for hold task during level
 }
 
