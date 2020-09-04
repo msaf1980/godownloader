@@ -69,7 +69,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 			map[string]bool{},
 		}, // Read file
 		{
-			newLoadTask(baseAddr+"/test", 1, 0, false, nil, 1), false, "", "test/index.html.tpl",
+			newLoadTask(baseAddr+"/test", 2, 0, false, nil, 1), false, "", "test/index.html.tpl",
 			map[string]bool{},
 		}, // check redirect
 		{
@@ -83,7 +83,12 @@ func TestDownloader_httpLoad(t *testing.T) {
 		},
 		{
 			newLoadTask(baseAddr+"/link2.html", 1, 0, false, nil, 1), false, "", "test/link2.html.tpl",
-			map[string]bool{},
+			map[string]bool{
+				"http://127.0.0.1/":      true, // root URL, not downloaded at this step
+				baseAddr + "/index.html": true, baseAddr + "/link1.html": true, baseAddr + "/link2.html": true,
+				baseAddr + "/not_found.html": true,
+				baseAddr + "/style.css":      true, baseAddr + "/1.gif": true, baseAddr + "/1.gz": true,
+			},
 		},
 		{
 			newLoadTask(baseAddr+"/not_found.html", 1, 0, false, nil, 1), true, "Not found", "",
@@ -128,15 +133,16 @@ func TestDownloader_httpLoad(t *testing.T) {
 			}
 
 			if len(tt.links) > 0 {
-				for _, task := range d.processed {
-					_, ok := tt.links[task.url]
+				for k := range d.processed.Iter() {
+					url := k.Key.(string)
+					_, ok := tt.links[url]
 					if !ok {
-						t.Errorf("Downloader.httpLoad() link %s extracted, but required", task.url)
+						t.Errorf("Downloader.httpLoad() link %s extracted, but required", url)
 					}
 				}
 
 				for url := range tt.links {
-					_, ok := d.processed[url]
+					_, ok := d.processed.Get(url)
 					if !ok {
 						t.Errorf("Downloader.httpLoad() link %s not extracted", url)
 					}

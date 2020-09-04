@@ -30,9 +30,9 @@ func (d *Downloader) httpLoad(task *task) error {
 				if i > 0 {
 					task.contentType = c[0:i]
 				}
-				d.processLock.Lock()
-				err = d.genTaskFileName(task)
-				d.processLock.Unlock()
+				d.filesLock.Lock()
+				err = d._genTaskFileName(task)
+				d.filesLock.Unlock()
 				//err = fmt.Errorf("download not realized at now")
 			}
 		} else {
@@ -188,8 +188,16 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 				href, ok := e.GetAttributeValue("href")
 				if ok {
 					if len(href) > 0 && href[0] != '#' {
-						typ, _ := e.GetAttributeValue("type")
+						//typ, _ := e.GetAttributeValue("type")
 						rel, _ := e.GetAttributeValue("rel")
+						needLoad := false
+						// if typ == "application/rss+xml" || rel == "alternate" || rel == "search" || rel == "canonical" || rel="amphtml" {
+						// 	needLoad = false
+						// }
+						if rel == "stylesheet" || rel == "preload" || rel == "image_src" ||
+							rel == "shortcut icon" || rel == "apple-touch-icon" || rel == "icon" {
+							needLoad = true
+						}
 						var absURL string
 						if firstParse {
 							absURL = urlutils.AbsURL(href, baseHost)
@@ -200,7 +208,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(href, baseHost)
 							}
 						}
-						if !d.addURL(absURL, typ, rel, d.retry, task, baseHost) {
+						if !needLoad || !d.addURL(absURL, true, d.retry, task, baseHost) {
 							e.SetAttribute("href", absURL)
 						}
 					}
@@ -220,13 +228,17 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(href, baseHost)
 							}
 						}
-						if !d.addURL(absURL, "", "", d.retry, task, baseHost) {
+						if !d.addURL(absURL, false, d.retry, task, baseHost) {
 							e.SetAttribute("href", absURL)
 						}
 					}
 					//fmt.Printf("a href='%s'\n", absURL)
 				}
 			case "iframe", "img", "script":
+				pageContent := true
+				if e.TagName == "iframe" {
+					pageContent = false
+				}
 				src, ok := e.GetAttributeValue("src")
 				if ok {
 					if len(src) > 0 && src[0] != '#' {
@@ -240,7 +252,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(src, baseHost)
 							}
 						}
-						if !d.addURL(absURL, "", "", d.retry, task, baseHost) {
+						if !d.addURL(absURL, pageContent, d.retry, task, baseHost) {
 							e.SetAttribute("src", absURL)
 						}
 					}

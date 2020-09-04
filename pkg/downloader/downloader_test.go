@@ -51,7 +51,7 @@ func Test_genTaskFileName_FlatMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			task := task{url: tt.url, contentType: tt.contentType}
-			err := d.genTaskFileName(&task)
+			err := d._genTaskFileName(&task)
 			if err != nil {
 				t.Fatalf("taskGenerateFilename() return erorr '%s'", err)
 			}
@@ -108,7 +108,7 @@ func Test_genTaskFileName_FlatDirMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			task := task{url: tt.url, contentType: tt.contentType}
-			err := d.genTaskFileName(&task)
+			err := d._genTaskFileName(&task)
 			if err != nil {
 				t.Fatalf("taskGenerateFilename() return error '%s'", err)
 			}
@@ -165,7 +165,7 @@ func Test_genTaskFileName_DirMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			task := task{url: tt.url, contentType: tt.contentType}
-			err := d.genTaskFileName(&task)
+			err := d._genTaskFileName(&task)
 			if err != nil {
 				t.Fatalf("taskGenerateFilename() return error '%s'", err)
 			}
@@ -226,7 +226,7 @@ func Test_genTaskFileName_SiteDirMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			task := task{url: tt.url, contentType: tt.contentType}
-			err := d.genTaskFileName(&task)
+			err := d._genTaskFileName(&task)
 			if err != nil {
 				t.Fatalf("taskGenerateFilename() return error '%s'", err)
 			}

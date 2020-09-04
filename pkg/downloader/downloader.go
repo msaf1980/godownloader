@@ -1,7 +1,6 @@
 package downloader
 
 import (
-	"container/list"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/msaf1980/godownloader/pkg/mimetypes"
 
+	"github.com/cornelk/hashmap"
 	lockfree_queue "github.com/msaf1980/go-lockfree-queue"
 	"github.com/rs/zerolog/log"
 )
@@ -78,10 +78,11 @@ type Downloader struct {
 
 	queue *lockfree_queue.Queue // task queue
 
-	processLock sync.Mutex
-	processed   map[string]*task // processed tasks by url
-	downloads   map[string]*task // processed tasks by filename
-	root        *list.List
+	//processLock sync.Mutex       // set when check for existing/insert during add new task
+	processed *hashmap.HashMap // lock-free map[string]*task - processed tasks by url
+	filesLock sync.Mutex       // set when generate/insert new filename for task
+	files     *hashmap.HashMap // lock-free map[string]*task - processed tasks by filename
+	//root        *list.List
 
 	wg       sync.WaitGroup
 	running  bool
@@ -97,11 +98,11 @@ func NewDownloader(saveMode SaveMode, retry int, timeout time.Duration, maxRedir
 		retry = 1
 	}
 	return &Downloader{saveMode: saveMode, retry: retry, timeout: timeout, maxRedirects: maxRedirects,
-		processed: make(map[string]*task),
-		downloads: make(map[string]*task),
+		processed: &hashmap.HashMap{},
+		files:     &hashmap.HashMap{},
 		queue:     lockfree_queue.NewQueue(4096),
-		root:      list.New(),
-		running:   true,
+		//root:      list.New(),
+		running: true,
 	}
 }
 
@@ -110,7 +111,7 @@ func (d *Downloader) NewLoad(dir string) (*Downloader, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("output dir not set")
 	}
-	if d.root.Len() == 0 {
+	if d.processed.Len() == 0 {
 		return nil, fmt.Errorf("root url not set")
 	}
 	err := os.Mkdir(dir, 0755)
@@ -119,51 +120,6 @@ func (d *Downloader) NewLoad(dir string) (*Downloader, error) {
 	}
 	d.outdir = dir
 	return d, nil
-}
-
-func (d *Downloader) setTaskFileName(task *task, path string) {
-	if path != "" {
-		task.setFileName(path)
-		d.downloads[task.fileName] = task
-	}
-}
-
-func (d *Downloader) taskByFileName(fileName string) *task {
-	t, ok := d.downloads[fileName]
-	if ok {
-		return t
-	}
-	return nil
-}
-
-func (d *Downloader) setTask(task *task) {
-	d.processed[task.url] = task
-}
-
-func (d *Downloader) taskByURL(url string) *task {
-	t, ok := d.processed[url]
-	if ok {
-		return t
-	}
-	return nil
-}
-
-// AddRootURL add root url to download queue
-func (d *Downloader) AddRootURL(url string, level int, extLevel int, secureAs bool, protocols *map[Protocol]bool) *Downloader {
-	if level == 0 {
-		return d
-	}
-	task := newLoadTask(url, level, extLevel, secureAs, protocols, d.retry)
-	if task.protocol == Unsuppoted {
-		log.Error().Str("url", task.url).Msg("protocol not supported")
-	} else {
-		d.processLock.Lock()
-		d.root.PushBack(task)
-		d.queue.Put(task)
-		d.setTask(task)
-		d.processLock.Unlock()
-	}
-	return d
 }
 
 // Abort set stop flag (but need wait for end running goroutines)
@@ -216,31 +172,22 @@ func (d *Downloader) startN(thread string) {
 					atomic.AddInt32(&d.download, 1)
 				}
 				t := v.(*task)
-				d.processLock.Lock()
 				// check file in processed
-				task := d.taskByURL(t.url)
-				if task == nil {
-					task = t
-					d.setTask(task)
-					d.processLock.Unlock()
-				} else {
-					recheck := false
-					if task.level < t.level {
-						task.level = t.level
-						recheck = true
-					}
-					if task.extLevel < t.extLevel {
-						task.extLevel = t.extLevel
-						recheck = true
-					}
-					d.processLock.Unlock()
+				task, exist := d.AddTask(t)
+				if exist {
+					recheck := task.UpdateLevel(t.Level(), t.ExtLevel())
 					if task.success && !recheck {
 						// already downloaded
 						continue
 					}
 				}
 				// run task
-				d.runTask(task)
+				if task.TryLock() {
+					d.runTask(task)
+				} else {
+					// Task already running, requeue
+					d.queue.Put((task))
+				}
 			} else {
 				if idle == 0 {
 					idle = 1

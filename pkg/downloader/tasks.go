@@ -5,6 +5,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/msaf1980/godownloader/pkg/urlutils"
 
@@ -40,9 +42,9 @@ func URLProtocol(url string) Protocol {
 type task struct {
 	url       string
 	protocol  Protocol
-	level     int  // download level (from same site)
-	extLevel  int  // download level (from external sites)
-	secureAs  bool // cast secure and unsecure links to one site (no external)
+	level     int32 // download level (from same site)
+	extLevel  int32 // download level (from external sites)
+	secureAs  bool  // cast secure and unsecure links to one site (no external)
 	protocols *map[Protocol]bool
 
 	fileName    string // relative filename (blank if no try downloads else)
@@ -50,10 +52,47 @@ type task struct {
 	success     bool
 	size        int64 // size from header
 	try         int   // retry count - stop on 0 or success
+
+	lock      uint32     // set 1 for hold task during download/parse
+	lockLevel sync.Mutex // set 1 for hold task during level
+}
+
+func (task *task) TryLock() bool {
+	if atomic.CompareAndSwapUint32(&task.lock, 0, 1) {
+		return true
+	}
+	return false
+}
+
+func (task *task) UnLock() {
+	atomic.CompareAndSwapUint32(&task.lock, 1, 0)
+}
+
+func (task *task) UpdateLevel(level int32, extLevel int32) bool {
+	task.lockLevel.Lock()
+	changed := false
+	if atomic.LoadInt32(&task.level) < level {
+		atomic.StoreInt32(&task.level, level)
+		changed = true
+	}
+	if atomic.LoadInt32(&task.extLevel) < extLevel {
+		atomic.StoreInt32(&task.extLevel, extLevel)
+		changed = true
+	}
+	task.lockLevel.Unlock()
+	return changed
+}
+
+func (task *task) Level() int32 {
+	return atomic.LoadInt32(&task.level)
+}
+
+func (task *task) ExtLevel() int32 {
+	return atomic.LoadInt32(&task.extLevel)
 }
 
 // newLoadTask create new load task
-func newLoadTask(url string, level int, extLevel int, secureAs bool, protocols *map[Protocol]bool, retry int) *task {
+func newLoadTask(url string, level int32, extLevel int32, secureAs bool, protocols *map[Protocol]bool, retry int) *task {
 	return &task{url: url, level: level, extLevel: extLevel,
 		secureAs: secureAs, protocol: URLProtocol(url), protocols: protocols,
 		success: false, try: retry,
@@ -64,7 +103,42 @@ func (t *task) setFileName(fileName string) {
 	t.fileName = fileName
 }
 
-func (d *Downloader) inrTaskFileName(name string, ext string) (string, error) {
+// internal method, need lock filesLock before
+func (d *Downloader) _setTaskFileName(task *task, path string) {
+	if path != "" {
+		task.setFileName(path)
+		d.files.Set(task.fileName, task)
+	}
+}
+
+func (d *Downloader) taskByFileName(fileName string) *task {
+	t, ok := d.files.Get(fileName)
+	if ok {
+		return t.(*task)
+	}
+	return nil
+}
+
+// internal method, need lock filesLock before
+// func (d *Downloader) _setTask(task *task) {
+// 	d.processed.Set(task.url, task)
+// }
+
+func (d *Downloader) AddTask(t *task) (*task, bool) {
+	p, exist := d.processed.GetOrInsert(t.url, t)
+	return p.(*task), exist
+}
+
+func (d *Downloader) taskByURL(url string) *task {
+	t, ok := d.processed.Get(url)
+	if ok {
+		return t.(*task)
+	}
+	return nil
+}
+
+// internal method, need lock filesLock before
+func (d *Downloader) _inrTaskFileName(name string, ext string) (string, error) {
 	i := int64(1)
 	for {
 		newPath := name + "-" + strconv.FormatInt(i, 10) + ext
@@ -78,7 +152,8 @@ func (d *Downloader) inrTaskFileName(name string, ext string) (string, error) {
 	}
 }
 
-func (d *Downloader) genTaskFileName(task *task) error {
+// internal method, need lock filesLock before
+func (d *Downloader) _genTaskFileName(task *task) error {
 	u, err := urlx.Parse(task.url)
 	if err != nil {
 		return err
@@ -110,12 +185,12 @@ func (d *Downloader) genTaskFileName(task *task) error {
 
 		path, name, ext := replaceExtension(path, task.contentType)
 		if d.taskByFileName(path) != nil {
-			path, err = d.inrTaskFileName(name, ext)
+			path, err = d._inrTaskFileName(name, ext)
 			if err != nil {
 				return err
 			}
 		}
-		d.setTaskFileName(task, path)
+		d._setTaskFileName(task, path)
 		return nil
 	case DirMode, SiteDirMode:
 		var name string
@@ -130,12 +205,12 @@ func (d *Downloader) genTaskFileName(task *task) error {
 
 		path, name, ext := replaceExtension(path, task.contentType)
 		if d.taskByFileName(path) != nil {
-			path, err = d.inrTaskFileName(name, ext)
+			path, err = d._inrTaskFileName(name, ext)
 			if err != nil {
 				return err
 			}
 		}
-		d.setTaskFileName(task, path)
+		d._setTaskFileName(task, path)
 		return nil
 	}
 
@@ -186,9 +261,9 @@ func (d *Downloader) runTask(task *task) {
 	}
 }
 
-func level(url string, baseTask *task, baseHost string) (int, int) {
-	level := baseTask.level
-	extLevel := baseTask.extLevel
+func level(url string, baseTask *task, baseHost string) (int32, int32) {
+	level := baseTask.Level()
+	extLevel := baseTask.ExtLevel()
 	host, _ := urlutils.SplitURL(url)
 	if host == baseHost {
 		level--
@@ -201,37 +276,51 @@ func level(url string, baseTask *task, baseHost string) (int, int) {
 	return level, extLevel
 }
 
-func (d *Downloader) addURL(url string, contentType string, rel string, retry int, baseTask *task, baseHost string) bool {
-	if contentType == "application/rss+xml" || rel == "alternate" || rel == "search" || rel == "canonical" {
+// AddRootURL add root url to download queue
+func (d *Downloader) AddRootURL(url string, level int32, extLevel int32, secureAs bool, protocols *map[Protocol]bool) *Downloader {
+	if level == 0 {
+		return d
+	}
+	task := newLoadTask(url, level, extLevel, secureAs, protocols, d.retry)
+	if task.protocol == Unsuppoted {
+		log.Error().Str("url", task.url).Msg("protocol not supported")
+	} else {
+		//d.processLock.Lock()
+		_, exist := d.AddTask(task)
+		if exist {
+			//d.processLock.Unlock()
+			log.Warn().Str("url", task.url).Msg("already added")
+		} else {
+			//d.processLock.Unlock()
+			//d.root.PushBack(task)
+			d.queue.Put(task)
+		}
+	}
+	return d
+}
+
+func (d *Downloader) addURL(url string, pageContent bool, retry int, baseTask *task, baseHost string) bool {
+	stripURL := urlutils.StripAnchor(url)
+	level, extLevel := level(stripURL, baseTask, baseHost)
+	queued := false
+	exist := true
+	if level == 0 && !pageContent {
 		return false
 	}
-	stripURL := urlutils.StripAnchor(url)
-	queued := false
-	d.processLock.Lock()
-	task, ok := d.processed[stripURL]
-	if ok {
-		level, extLevel := level(stripURL, baseTask, baseHost)
-		if task.level < level {
-			task.level = level
+
+	t := d.taskByURL(stripURL)
+	if t == nil {
+		t = newLoadTask(stripURL, level, extLevel, baseTask.secureAs, baseTask.protocols, d.retry)
+		t, exist = d.AddTask(t) // recheck, may be added by concurrent
+		if !exist {
 			queued = true
 		}
-		if task.extLevel < extLevel {
-			task.extLevel = extLevel
-			queued = true
-		}
-	} else {
-		level, extLevel := level(stripURL, baseTask, baseHost)
-		if level == 0 {
-			d.processLock.Unlock()
-			return false
-		}
-		task = newLoadTask(stripURL, level, extLevel, baseTask.secureAs, baseTask.protocols, d.retry)
-		d.setTask(task)
-		queued = true
 	}
-	d.processLock.Unlock()
+	if exist {
+		queued = t.UpdateLevel(level, extLevel)
+	}
 	if queued {
-		d.queue.Put(task)
+		d.queue.Put(t)
 	}
 	return true
 }
