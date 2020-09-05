@@ -67,12 +67,6 @@ func replaceExtension(path string, contentType string) (string, string, string) 
 	return name + ext, name, ext
 }
 
-type URL struct {
-	scheme string
-	host   string
-	path   string
-}
-
 // Downloader downloader instance
 type Downloader struct {
 	saveMode SaveMode

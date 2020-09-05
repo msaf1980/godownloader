@@ -59,10 +59,7 @@ type task struct {
 }
 
 func (task *task) TryLock() bool {
-	if atomic.CompareAndSwapUint32(&task.lock, 0, 1) {
-		return true
-	}
-	return false
+	return atomic.CompareAndSwapUint32(&task.lock, 0, 1)
 }
 
 func (task *task) UnLock() {

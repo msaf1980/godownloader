@@ -338,9 +338,6 @@ func Test_level(t *testing.T) {
 func TestDownloader_addTask(t *testing.T) {
 	d := NewDownloader(FlatMode, 1, time.Second, 1)
 
-	type args struct {
-		t *task
-	}
 	tests := []struct {
 		name  string
 		task  *task
