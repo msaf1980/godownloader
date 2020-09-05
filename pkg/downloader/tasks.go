@@ -222,33 +222,35 @@ func (d *Downloader) _genTaskFileName(task *task) error {
 	return fmt.Errorf("not realized")
 }
 
-func (d *Downloader) recheckTask(task *task) {
+func (d *Downloader) recheckTask(task *task) bool {
 	// TODO: reparse files for load after change levels
 
 	if !d.failed {
 		d.failed = true
 	}
 	log.Error().Str("url", task.url).Str("file", task.fileName).Msg("recheck not realized at now")
+	return false
 }
 
-func (d *Downloader) runTask(task *task) {
+func (d *Downloader) runTask(task *task) bool {
 	if task.success {
 		// already doanload, reload and check
 		if task.protocol == HTTP && task.contentType == "text/html" {
-			d.recheckTask(task)
+			return d.recheckTask(task)
 		}
+		return true
 	} else if task.try > 0 {
 		var err error
 		switch task.protocol {
 		case HTTP:
 			err = d.httpLoad(task)
 			if err == nil && task.contentType == "text/html" {
-				d.recheckTask(task)
+				return d.recheckTask(task)
 			}
 		default:
 			task.try = 0
 			log.Warn().Str("url", task.url).Str("file", task.fileName).Msg("protocol not supported")
-			return
+			return false
 		}
 		if err != nil {
 			if task.try > 1 {
@@ -260,10 +262,13 @@ func (d *Downloader) runTask(task *task) {
 				d.failed = true
 			}
 			log.Error().Str("url", task.url).Str("file", task.fileName).Msg(err.Error())
+			return false
 		} else {
 			log.Info().Str("url", task.url).Str("file", task.fileName).Int64("size", task.size).Msg("done")
+			return true
 		}
 	}
+	return false
 }
 
 func level(url string, baseHost string, baseDir string, level int32, downLevel int32, extLevel int32) (int32, int32, int32) {
@@ -290,28 +295,25 @@ func level(url string, baseHost string, baseDir string, level int32, downLevel i
 }
 
 // AddRootURL add root url to download queue
-func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLevel int32, secureAs bool,
-	protocols *map[Protocol]bool) *Downloader {
+func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLevel int32,
+	protocols *map[Protocol]bool) bool {
 
 	if level < 1 {
-		return d
+		return false
 	}
 	task := newLoadTask(url, level, downLevel, extLevel, d.retry)
-	if task.protocol == Unsuppoted {
-		log.Error().Str("url", task.url).Msg("protocol not supported")
+	//d.processLock.Lock()
+	_, exist := d.addTask(task)
+	if exist {
+		//d.processLock.Unlock()
+		return false
 	} else {
-		//d.processLock.Lock()
-		_, exist := d.addTask(task)
-		if exist {
-			//d.processLock.Unlock()
-			log.Warn().Str("url", task.url).Msg("already added")
-		} else {
-			//d.processLock.Unlock()
-			//d.root.PushBack(task)
-			d.queue.Put(task)
-		}
+		//d.processLock.Unlock()
+		//d.root.PushBack(task)
+		d.queue.Put(task)
 	}
-	return d
+
+	return true
 }
 
 func (d *Downloader) addURL(url string, pageContent bool, retry int, baseHost string, baseDir string,
