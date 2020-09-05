@@ -48,7 +48,7 @@ func TestSplitURL(t *testing.T) {
 	}
 }
 
-func TestSplitURL3(t *testing.T) {
+func TestSplitURLScheme(t *testing.T) {
 	tests := []struct {
 		url        string
 		wantScheme string
@@ -64,7 +64,7 @@ func TestSplitURL3(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {
-			scheme, host, path := SplitURL3(tt.url)
+			scheme, host, path := SplitURLScheme(tt.url)
 			if scheme != tt.wantScheme {
 				t.Errorf("SplitURL() scheme got = %v, want %v", scheme, tt.wantScheme)
 			}

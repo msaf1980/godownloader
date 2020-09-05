@@ -46,7 +46,6 @@ type task struct {
 	level     int32 // download level (from same site on same or upper dir)
 	downLevel int32 // download level (from same sites  underlying directories)
 	extLevel  int32 // download level (from external sites)
-	protocols *map[Protocol]bool
 
 	fileName    string // relative filename (blank if no try downloads else)
 	contentType string
@@ -295,8 +294,7 @@ func level(url string, baseHost string, baseDir string, level int32, downLevel i
 }
 
 // AddRootURL add root url to download queue
-func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLevel int32,
-	protocols *map[Protocol]bool) bool {
+func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLevel int32) bool {
 
 	if level < 1 {
 		return false
@@ -316,7 +314,8 @@ func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLev
 	return true
 }
 
-func (d *Downloader) addURL(url string, pageContent bool, retry int, baseHost string, baseDir string,
+func (d *Downloader) addURL(url string, pageContent bool, retry int,
+	baseHost string, baseDir string,
 	baseLevel int32, baseDownLevel int32, baseExtLevel int32) bool {
 
 	stripURL := urlutils.StripAnchor(url)

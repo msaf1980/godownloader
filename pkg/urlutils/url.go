@@ -30,8 +30,8 @@ func SplitURL(url string) (string, string) {
 	return url[0:i], url[i:]
 }
 
-// SplitURL3 split absolute url to scheme, host and path part
-func SplitURL3(url string) (string, string, string) {
+// SplitURLScheme split absolute url to scheme, host and path part
+func SplitURLScheme(url string) (string, string, string) {
 	var scheme string
 	p := strings.Index(url, "://")
 	if p == -1 {

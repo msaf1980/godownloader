@@ -12,7 +12,7 @@ func main() {
 	n := 10
 	d := downloader.NewDownloader(downloader.FlatMode, 1, time.Second, 1)
 	url := "http://127.0.0.1"
-	if !d.AddRootURL(url, 1, 0, 0, nil) {
+	if !d.AddRootURL(url, 1, 0, 0) {
 		log.Warn().Str("url", url).Msg("already added")
 	}
 

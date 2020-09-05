@@ -304,7 +304,8 @@ func Test_level(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			baseHost, basePath := urlutils.SplitURL(tt.baseTask.url)
 			baseDir := urlutils.BaseURLDir(basePath)
-			level, downLevel, extLevel := level(tt.url, baseHost, baseDir, tt.baseTask.Level(), tt.baseTask.DownLevel(), tt.baseTask.ExtLevel())
+			level, downLevel, extLevel := level(tt.url, baseHost, baseDir,
+				tt.baseTask.Level(), tt.baseTask.DownLevel(), tt.baseTask.ExtLevel())
 			if level != tt.wantLevel {
 				t.Errorf("level() level = %v, want %v", level, tt.wantLevel)
 			}
