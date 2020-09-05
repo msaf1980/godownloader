@@ -100,3 +100,23 @@ func TestAbsURL(t *testing.T) {
 		})
 	}
 }
+
+func TestBaseURLDir(t *testing.T) {
+	tests := []struct {
+		url  string
+		want string
+	}{
+		{"http://test.int", "http://test.int/"},
+		{"http://test.int/", "http://test.int/"},
+		{"http://test.int/test", "http://test.int/"},
+		{"http://test.int/index.html", "http://test.int/"},
+		{"http://test.int/test/", "http://test.int/test/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			if got := BaseURLDir(tt.url); got != tt.want {
+				t.Errorf("BaseURLDir() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

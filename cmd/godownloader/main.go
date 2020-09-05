@@ -11,7 +11,7 @@ import (
 func main() {
 	n := 10
 	d := downloader.NewDownloader(downloader.FlatMode, 1, time.Second, 1)
-	d.AddRootURL("http://127.0.0.1", 1, 0, true, nil)
+	d.AddRootURL("http://127.0.0.1", 1, 0, 0, true, nil)
 
 	_, err := d.NewLoad("test")
 	if err != nil {

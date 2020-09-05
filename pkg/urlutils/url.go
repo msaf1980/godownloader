@@ -60,3 +60,23 @@ func AbsURL(url string, baseHost string) string {
 	}
 	return url
 }
+
+// BaseURLDir strip filename defore last /
+func BaseURLDir(url string) string {
+	p := strings.Index(url, "://")
+	if p == -1 {
+		p = 0
+	} else {
+		p += 3
+	}
+	i := strings.LastIndex(url[p:], "/")
+	if i == -1 {
+		return url + "/"
+	} else {
+		i += p
+	}
+	if i == len(url)-1 {
+		return url
+	}
+	return url[0 : i+1]
+}
