@@ -4,6 +4,8 @@ import (
 	"os"
 	"time"
 
+	//config "config/godownloader"
+
 	"github.com/msaf1980/godownloader/pkg/downloader"
 	"github.com/rs/zerolog/log"
 )
@@ -13,7 +15,7 @@ func main() {
 	d := downloader.NewDownloader(downloader.FlatMode, 1, time.Second, 1)
 	url := "http://127.0.0.1"
 	if !d.AddRootURL(url, 1, 0, 0) {
-		log.Warn().Str("url", url).Msg("already added")
+		log.Fatal().Str("url", url).Msg("already added")
 	}
 
 	_, err := d.NewLoad("test")

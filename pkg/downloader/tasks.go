@@ -42,10 +42,11 @@ func URLProtocol(url string) Protocol {
 
 type task struct {
 	url       string
+	rootDir   string
 	protocol  Protocol
-	level     int32 // download level (from same site on same or upper dir)
-	downLevel int32 // download level (from same sites  underlying directories)
-	extLevel  int32 // download level (from external sites)
+	links     int32 // download links (from same site on same or upper dir)
+	downLevel int32 // download links (from same sites underlying directories)
+	extLinks  int32 // download links (from external sites)
 
 	fileName    string // relative filename (blank if no try downloads else)
 	contentType string
@@ -68,40 +69,40 @@ func (task *task) UnLock() {
 	atomic.CompareAndSwapUint32(&task.lock, 1, 0)
 }
 
-func (task *task) UpdateLevel(level int32, downLevel int32, extLevel int32) bool {
+func (task *task) UpdateLinks(links int32, downLevel int32, extLinks int32) bool {
 	task.lockLevel.Lock()
 	changed := false
-	if atomic.LoadInt32(&task.level) < level {
-		atomic.StoreInt32(&task.level, level)
+	if atomic.LoadInt32(&task.links) < links {
+		atomic.StoreInt32(&task.links, links)
 		changed = true
 	}
 	if atomic.LoadInt32(&task.downLevel) < downLevel {
 		atomic.StoreInt32(&task.downLevel, downLevel)
 		changed = true
 	}
-	if atomic.LoadInt32(&task.extLevel) < extLevel {
-		atomic.StoreInt32(&task.extLevel, extLevel)
+	if atomic.LoadInt32(&task.extLinks) < extLinks {
+		atomic.StoreInt32(&task.extLinks, extLinks)
 		changed = true
 	}
 	task.lockLevel.Unlock()
 	return changed
 }
 
-func (task *task) Level() int32 {
-	return atomic.LoadInt32(&task.level)
+func (task *task) Links() int32 {
+	return atomic.LoadInt32(&task.links)
 }
 
 func (task *task) DownLevel() int32 {
 	return atomic.LoadInt32(&task.downLevel)
 }
 
-func (task *task) ExtLevel() int32 {
-	return atomic.LoadInt32(&task.extLevel)
+func (task *task) ExtLinks() int32 {
+	return atomic.LoadInt32(&task.extLinks)
 }
 
 // newLoadTask create new load task
-func newLoadTask(url string, level int32, downLevel int32, extLevel int32, retry int) *task {
-	return &task{url: url, level: level, downLevel: downLevel, extLevel: extLevel,
+func newLoadTask(url, rootDir string, links int32, downLevel int32, extLinks int32, retry int) *task {
+	return &task{url: url, rootDir: rootDir, links: links, downLevel: downLevel, extLinks: extLinks,
 		protocol: URLProtocol(url),
 		success:  false, try: retry,
 	}
@@ -270,36 +271,45 @@ func (d *Downloader) runTask(task *task) bool {
 	return false
 }
 
-func level(url string, baseHost string, baseDir string, level int32, downLevel int32, extLevel int32) (int32, int32, int32) {
+func level(url, baseHost, baseDir string, links, downLevel, extLinks int32) (int32, int32, int32) {
+	if links == 0 {
+		return 0, 0, 0
+	}
 	host, path := urlutils.SplitURL(url)
 	if host == baseHost {
 		if strings.HasPrefix(path, baseDir) {
-			level--
-			// TODO: check for up downLevel
-			n := int32(strutils.CountRune(path[len(baseDir):], '/'))
-			downLevel += n
+			links--
 		} else {
 			// TODO: check for level and downLevel
-			level = downLevel
-			downLevel = 0
+			rootDir := urlutils.RootDir(urlutils.BaseURLDir(path), baseDir)
+			n := int32(strutils.CountRune(baseDir[len(rootDir):], '/'))
+			if n <= downLevel {
+				links--
+				downLevel -= n
+			} else {
+				links = 0
+				downLevel = 0
+				extLinks = 0
+			}
 		}
 	} else {
 		// TODO: secureAs
 		// TODO: depth (go to N levels down on same site)
-		level = extLevel
+		links = extLinks
 		downLevel = 0
-		extLevel = 0
+		extLinks = 0
 	}
-	return level, downLevel, extLevel
+	return links, downLevel, extLinks
 }
 
 // AddRootURL add root url to download queue
 func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLevel int32) bool {
-
 	if level < 1 {
 		return false
 	}
-	task := newLoadTask(url, level, downLevel, extLevel, d.retry)
+	_, path := urlutils.SplitURL(url)
+	dir := urlutils.BaseURLDir(path)
+	task := newLoadTask(url, dir, level, downLevel, extLevel, d.retry)
 	//d.processLock.Lock()
 	_, exist := d.addTask(task)
 	if exist {
@@ -316,28 +326,28 @@ func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLev
 
 func (d *Downloader) addURL(url string, pageContent bool, retry int,
 	baseHost string, baseDir string,
-	baseLevel int32, baseDownLevel int32, baseExtLevel int32) bool {
+	baseLinks int32, baseDownLevel int32, baseExtLinks int32) bool {
 
 	stripURL := urlutils.StripAnchor(url)
-	level, downLevel, extLevel := level(stripURL, baseHost, baseDir, baseLevel, baseDownLevel, baseExtLevel)
+	links, downLevel, extLinks := level(stripURL, baseHost, baseDir, baseLinks, baseDownLevel, baseExtLinks)
 	queued := false
 	exist := true
 	if !pageContent {
-		if level < 1 {
+		if links < 1 {
 			return false
 		}
 	}
 
 	t := d.taskByURL(stripURL)
 	if t == nil {
-		t = newLoadTask(stripURL, level, downLevel, extLevel, d.retry)
+		t = newLoadTask(stripURL, baseDir, links, downLevel, extLinks, d.retry)
 		t, exist = d.addTask(t) // recheck, may be added by concurrent
 		if !exist {
 			queued = true
 		}
 	}
 	if exist {
-		queued = t.UpdateLevel(level, downLevel, extLevel)
+		queued = t.UpdateLinks(links, downLevel, extLinks)
 	}
 	if queued {
 		d.queue.Put(t)

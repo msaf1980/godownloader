@@ -8,7 +8,7 @@ import (
 )
 
 func Test_task_TryLock(t *testing.T) {
-	task := newLoadTask("", 0, 0, 0, 0)
+	task := newLoadTask("", "/", 0, 0, 0, 0)
 	if !task.TryLock() {
 		t.Fatalf("task.TryLock() can't lock")
 
@@ -255,65 +255,81 @@ func Test_level(t *testing.T) {
 		name          string
 		url           string
 		baseTask      *task
-		wantLevel     int32
+		wantLinks     int32
 		wantDownLevel int32
-		wantExtLevel  int32
+		wantExtLinks  int32
 	}{
 		{
 			"no download (same site dir)", "http://test.int/test1/test2/link1.html",
-			newLoadTask("http://test.int/test1/test2/index.html", 1, 1, 1, 1),
+			newLoadTask("http://test.int/test1/test2/index.html", "/test1/test2/",
+				1, 1, 1, 1,
+			),
 			0, 1, 1,
 		},
 		{
 			"download (same site dir)", "http://test.int/test1/test2/link2.html",
-			newLoadTask("http://test.int/test1/test2/index.html", 2, 1, 1, 1),
-			1, 1, 1,
-		},
-		{
-			"download (up to site dir)", "http://test.int/test1/test2/test3/link3.html",
-			newLoadTask("http://test.int/test1/test2/index.html", 2, 1, 1, 1),
+			newLoadTask("http://test.int/test1/test2/index.html", "/test1/test2/",
+				2, 2, 1, 1,
+			),
 			1, 2, 1,
 		},
 		{
+			"download (up to site dir)", "http://test.int/test1/test2/test3/link3.html",
+			newLoadTask("http://test.int/test1/test2/index.html", "/test1/test2/",
+				4, 1, 1, 1,
+			),
+			3, 1, 1,
+		},
+		{
 			"no download (down from site dir) #1", "http://test.int/test1/link1.html",
-			newLoadTask("http://test.int/test1/test2/index.html", 2, 0, 1, 1),
-			0, 0, 1,
+			newLoadTask("http://test.int/test1/test2/index.html", "/test1/test2/",
+				2, 0, 1, 1,
+			),
+			0, 0, 0,
 		},
 		{
 			"download (down from site dir) #1", "http://test.int/test1/link1.html",
-			newLoadTask("http://test.int/test1/test2/index.html", 2, 1, 1, 1),
-			1, 0, 1,
+			newLoadTask("http://test.int/test1/test2/index.html", "/test1/test2/",
+				3, 1, 1, 1,
+			),
+			2, 0, 1,
 		},
 		{
 			"download (down-up from site dir) #2", "http://test.int/test1/test3/link1.html",
-			newLoadTask("http://test.int/test1/test2/index.html", 3, 1, 0, 1),
-			1, 0, 0,
+			newLoadTask("http://test.int/test1/test2/index.html", "/test1/test2/",
+				3, 1, 0, 1,
+			),
+			2, 0, 0,
 		},
 		{
 			"no download (from other site)", "http://test.int/test1/link1.html",
-			newLoadTask("http://no.int/test1/test2/index.html", 2, 3, 0, 1),
+			newLoadTask("http://no.int/test1/test2/index.html", "/test1/test2/",
+				2, 3, 0, 1,
+			),
 			0, 0, 0,
 		},
 		{
 			"download (from other site)", "http://test.int/test1/link1.html",
-			newLoadTask("http://no.int/test1/test2/index.html", 2, 1, 3, 1),
+			newLoadTask("http://no.int/test1/test2/index.html", "/test1/test2/",
+				2, 1, 3, 1,
+			),
 			3, 0, 0,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			baseHost, basePath := urlutils.SplitURL(tt.baseTask.url)
-			baseDir := urlutils.BaseURLDir(basePath)
-			level, downLevel, extLevel := level(tt.url, baseHost, baseDir,
-				tt.baseTask.Level(), tt.baseTask.DownLevel(), tt.baseTask.ExtLevel())
-			if level != tt.wantLevel {
-				t.Errorf("level() level = %v, want %v", level, tt.wantLevel)
+			baseHost, _ := urlutils.SplitURL(tt.baseTask.url)
+			links, downLevel, extLinks := level(tt.url, baseHost, tt.baseTask.rootDir,
+				tt.baseTask.Links(), tt.baseTask.DownLevel(), tt.baseTask.ExtLinks(),
+			)
+			if links != tt.wantLinks {
+				t.Errorf("Links() links = %v, want %v", links, tt.wantLinks)
 			}
 			if downLevel != tt.wantDownLevel {
-				t.Errorf("level() downLevel = %v, want %v", downLevel, tt.wantDownLevel)
+				t.Errorf("Links() downLinks = %v, want %v", downLevel, tt.wantDownLevel)
 			}
-			if extLevel != tt.wantExtLevel {
-				t.Errorf("level() extLevel = %v, want %v", extLevel, tt.wantExtLevel)
+			if extLinks != tt.wantExtLinks {
+				t.Errorf("Links() extLinks = %v, want %v", extLinks, tt.wantExtLinks)
 			}
 		})
 	}
@@ -332,17 +348,17 @@ func TestDownloader_addTask(t *testing.T) {
 	}{
 		{
 			name:  "add first task",
-			task:  newLoadTask("http://test.int/index.html", 1, 0, 0, 1),
+			task:  newLoadTask("http://test.int/index.html", "/", 1, 0, 0, 1),
 			exist: false,
 		},
 		{
 			name:  "readd first task (no changes)",
-			task:  newLoadTask("http://test.int/index.html", 1, 0, 0, 1),
+			task:  newLoadTask("http://test.int/index.html", "/", 1, 0, 0, 1),
 			exist: true,
 		},
 		{
 			name:  "readd first task (with changes)",
-			task:  newLoadTask("http://test.int/index.html", 1, 0, 0, 1),
+			task:  newLoadTask("http://test.int/index.html", "/", 1, 0, 0, 1),
 			exist: true,
 		},
 	}

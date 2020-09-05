@@ -68,11 +68,10 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 	// 	}
 	// }
 
-	baseHost, basePath := urlutils.SplitURL(task.url)
-	baseDir := urlutils.BaseURLDir(basePath)
-	baseLevel := task.Level()
+	baseHost, _ := urlutils.SplitURL(task.url)
+	baseLevel := task.Links()
 	baseDownLevel := task.DownLevel()
-	baseExtLevel := task.DownLevel()
+	baseExtLevel := task.ExtLinks()
 
 	var newHTML bytes.Buffer
 	r, _, err := htmlutils.DecodeHTMLBytes(data, "")
@@ -131,7 +130,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(href, baseHost)
 							}
 						}
-						if !needLoad || !d.addURL(absURL, true, d.retry, baseHost, baseDir, baseLevel, baseDownLevel, baseExtLevel) {
+						if !needLoad || !d.addURL(absURL, true, d.retry, baseHost, task.rootDir, baseLevel, baseDownLevel, baseExtLevel) {
 							e.SetAttribute("href", absURL)
 						}
 					}
@@ -151,7 +150,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(href, baseHost)
 							}
 						}
-						if !d.addURL(absURL, false, d.retry, baseHost, baseDir, baseLevel, baseDownLevel, baseExtLevel) {
+						if !d.addURL(absURL, false, d.retry, baseHost, task.rootDir, baseLevel, baseDownLevel, baseExtLevel) {
 							e.SetAttribute("href", absURL)
 						}
 					}
@@ -175,7 +174,7 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 								absURL = urlutils.AbsURL(src, baseHost)
 							}
 						}
-						if !d.addURL(absURL, pageContent, d.retry, baseHost, baseDir, baseLevel, baseDownLevel, baseExtLevel) {
+						if !d.addURL(absURL, pageContent, d.retry, baseHost, task.rootDir, baseLevel, baseDownLevel, baseExtLevel) {
 							e.SetAttribute("src", absURL)
 						}
 					}

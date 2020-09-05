@@ -120,3 +120,24 @@ func TestBaseURLDir(t *testing.T) {
 		})
 	}
 }
+
+func TestRootDir(t *testing.T) {
+	tests := []struct {
+		dir1 string
+		dir2 string
+		want string
+	}{
+		{"/", "/test1/", "/"},
+		{"/test1/test2/", "/test1/", "/test1/"},
+		{"/test1/test2/", "/test1/test3/", "/test1/"},
+		{"/test1/test2/", "/test1/test3/test4/", "/test1/"},
+		{"/test1/test2/test4/", "/test1/test3/test4/", "/test1/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.dir1+" "+tt.dir2, func(t *testing.T) {
+			if got := RootDir(tt.dir1, tt.dir2); got != tt.want {
+				t.Errorf("RootDir() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

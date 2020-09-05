@@ -56,7 +56,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 		links   map[string]bool
 	}{
 		{newLoadTask(
-			baseAddr+"/index.html", 2, 0, 0, 1), false, "", "test/index.html.tpl",
+			baseAddr+"/index.html", "/", 2, 0, 0, 1), false, "", "test/index.html.tpl",
 			map[string]bool{
 				"http://127.0.0.1/":          true, // root URL, not downloaded at this step
 				baseAddr + "/link1.html":     true,
@@ -65,15 +65,15 @@ func TestDownloader_httpLoad(t *testing.T) {
 			},
 		},
 		{
-			newLoadTask(baseAddr+"/1.gz", 1, 0, 0, 1), false, "", "test/1.gz",
+			newLoadTask(baseAddr+"/1.gz", "/", 1, 0, 0, 1), false, "", "test/1.gz",
 			map[string]bool{},
 		}, // Read file
 		{
-			newLoadTask(baseAddr+"/test", 2, 0, 0, 1), false, "", "test/index.html.tpl",
+			newLoadTask(baseAddr+"/test", "/", 2, 0, 0, 1), false, "", "test/index.html.tpl",
 			map[string]bool{},
 		}, // check redirect
 		{
-			newLoadTask(baseAddr+"/link1.html", 2, 0, 0, 1), false, "", "test/link1.html.tpl",
+			newLoadTask(baseAddr+"/link1.html", "/", 2, 0, 0, 1), false, "", "test/link1.html.tpl",
 			map[string]bool{
 				"http://127.0.0.1/":      true, // root URL, not downloaded at this step
 				baseAddr + "/index.html": true, baseAddr + "/link1.html": true, baseAddr + "/link2.html": true,
@@ -82,7 +82,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 			},
 		},
 		{
-			newLoadTask(baseAddr+"/link2.html", 1, 0, 0, 1), false, "", "test/link2.html.tpl",
+			newLoadTask(baseAddr+"/link2.html", "/", 1, 0, 0, 1), false, "", "test/link2.html.tpl",
 			map[string]bool{
 				"http://127.0.0.1/":      true, // root URL, not downloaded at this step
 				baseAddr + "/index.html": true, baseAddr + "/link1.html": true, baseAddr + "/link2.html": true,
@@ -91,7 +91,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 			},
 		},
 		{
-			newLoadTask(baseAddr+"/not_found.html", 1, 0, 0, 1), true, "Not found", "",
+			newLoadTask(baseAddr+"/not_found.html", "/", 1, 0, 0, 1), true, "Not found", "",
 			map[string]bool{},
 		}, // not found
 	}

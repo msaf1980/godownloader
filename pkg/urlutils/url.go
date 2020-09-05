@@ -80,3 +80,27 @@ func BaseURLDir(url string) string {
 	}
 	return url[0 : i+1]
 }
+
+// URLDirs return dirs slice
+func URLDirs(url string) []string {
+	return strings.Split(BaseURLDir(url), "/")
+}
+
+func RootDir(path1, path2 string) string {
+	last := 0
+	i := 0
+	l := len(path1)
+	if l > len(path2) {
+		l = len(path2)
+	}
+	for i < l {
+		if path1[i] != path2[i] {
+			break
+		}
+		if path1[i] == '/' {
+			last = i
+		}
+		i++
+	}
+	return path1[0 : last+1]
+}

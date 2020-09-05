@@ -67,6 +67,12 @@ func replaceExtension(path string, contentType string) (string, string, string) 
 	return name + ext, name, ext
 }
 
+type URL struct {
+	scheme string
+	host   string
+	path   string
+}
+
 // Downloader downloader instance
 type Downloader struct {
 	saveMode SaveMode
@@ -79,10 +85,9 @@ type Downloader struct {
 	queue *lockfree_queue.Queue // task queue
 
 	//processLock sync.Mutex       // set when check for existing/insert during add new task
-	processed *hashmap.HashMap // lock-free map[string]*task - processed tasks by url
+	processed *hashmap.HashMap // lock-free map[url]*task - processed tasks by url
 	filesLock sync.Mutex       // set when generate/insert new filename for task
-	files     *hashmap.HashMap // lock-free map[string]*task - processed tasks by filename
-	//root        *list.List
+	files     *hashmap.HashMap // lock-free map[filename]*task - processed tasks by filename
 
 	wg       sync.WaitGroup
 	running  bool
@@ -175,7 +180,7 @@ func (d *Downloader) startN(thread string) {
 				// check file in processed
 				task, exist := d.addTask(t)
 				if exist {
-					recheck := task.UpdateLevel(t.Level(), t.DownLevel(), t.ExtLevel())
+					recheck := task.UpdateLinks(t.Links(), t.DownLevel(), t.ExtLinks())
 					if task.success && !recheck {
 						// already downloaded
 						continue
