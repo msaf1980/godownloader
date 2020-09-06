@@ -30,6 +30,24 @@ const (
 	FlatDirMode
 )
 
+var (
+	saveModeMap = map[string]SaveMode{"site_dir": SiteDirMode, "dir": DirMode, "flat": FlatMode, "flat_dir": FlatDirMode}
+	saveModeStr = []string{"site_dir", "dir", "flat", "flat_dir"}
+)
+
+func (s *SaveMode) Set(value string) error {
+	mode, ok := saveModeMap[strings.ToLower(value)]
+	if ok {
+		*s = mode
+		return nil
+	}
+	return fmt.Errorf("unknown save mode: '%s'", value)
+}
+
+func (s *SaveMode) String() string {
+	return saveModeStr[*s]
+}
+
 // appendFlatDir Append dir to filename in FlatDirMode
 func appendFlatDir(path string, contentType string) string {
 	var dir string
@@ -83,6 +101,9 @@ type Downloader struct {
 	filesLock sync.Mutex       // set when generate/insert new filename for task
 	files     *hashmap.HashMap // lock-free map[filename]*task - processed tasks by filename
 
+	fileMap string // map
+	fMap    *os.File
+
 	wg       sync.WaitGroup
 	running  bool
 	download int32
@@ -106,7 +127,7 @@ func NewDownloader(saveMode SaveMode, retry int, timeout time.Duration, maxRedir
 }
 
 // NewLoad builder for new load
-func (d *Downloader) NewLoad(dir string) (*Downloader, error) {
+func (d *Downloader) NewLoad(dir string, fileMap string) (*Downloader, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("output dir not set")
 	}
@@ -118,6 +139,11 @@ func (d *Downloader) NewLoad(dir string) (*Downloader, error) {
 		return nil, err
 	}
 	d.outdir = dir
+	d.fileMap = dir + "/" + fileMap
+	err = d.newMap()
+	if err != nil {
+		return nil, err
+	}
 	return d, nil
 }
 
@@ -132,6 +158,11 @@ func (d *Downloader) Abort() {
 // Wait wait for complete
 func (d *Downloader) Wait() bool {
 	d.wg.Wait()
+	err := d.closeMap()
+	if err != nil {
+		d.failed = true
+		log.Error().Str("where", "map").Msg(err.Error())
+	}
 	return d.failed
 }
 

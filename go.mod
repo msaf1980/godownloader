@@ -13,4 +13,5 @@ require (
 	github.com/udhos/equalfile v0.3.0
 	golang.org/x/net v0.0.0-20200822124328-c89045814202
 	golang.org/x/text v0.3.3
+	gopkg.in/yaml.v2 v2.2.4
 )

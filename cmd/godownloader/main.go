@@ -1,28 +1,53 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"time"
 
-	//config "config/godownloader"
-
+	config "github.com/msaf1980/godownloader/config/godownloader"
 	"github.com/msaf1980/godownloader/pkg/downloader"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
-	n := 10
-	d := downloader.NewDownloader(downloader.FlatMode, 1, time.Second, 1)
-	url := "http://127.0.0.1"
-	if !d.AddRootURL(url, 1, 0, 0) {
-		log.Fatal().Str("url", url).Msg("already added")
+	dir, logLevel, cfg, err := config.Configuration(os.Args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+		os.Exit(1)
+	}
+	var saveMode downloader.SaveMode
+	err = saveMode.Set(cfg.SaveMode.String())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+		os.Exit(1)
 	}
 
-	_, err := d.NewLoad("test")
+	zerolog.SetGlobalLevel(logLevel)
+
+	d := downloader.NewDownloader(saveMode, cfg.Retry, cfg.Timeout, cfg.MaxRedirects)
+	for i := range cfg.Urls {
+		if !d.AddRootURL(cfg.Urls[i].URL, cfg.Urls[i].Level, cfg.Urls[i].DownLevel, cfg.Urls[i].ExtLevel) {
+			log.Fatal().Str("url", cfg.Urls[i].URL).Msg("already added")
+		}
+	}
+
+	switch os.Args[1] {
+	case "new":
+		_, err = d.NewLoad(dir, config.MAP_FILE)
+		if err == nil {
+			err = config.SaveConfig(dir, cfg)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command: '%s'\n", os.Args[1])
+		os.Exit(1)
+	}
 	if err != nil {
 		log.Fatal().Msg(err.Error())
 	}
-	d.Start(n)
+	d.Start(cfg.Parallel)
+	time.Sleep(10 * time.Millisecond)
 	if d.Wait() {
 		log.Error().Msg("Exit with errors")
 		os.Exit(1)

@@ -3,6 +3,7 @@ package downloader
 import (
 	"bytes"
 	"io/ioutil"
+	"os"
 
 	"github.com/calbucci/go-htmlparser"
 	"github.com/msaf1980/godownloader/pkg/htmlutils"
@@ -208,7 +209,12 @@ func (d *Downloader) htmlParse(data []byte, task *task, firstParse bool) error {
 	newHTML.WriteRune('\n')
 
 	if changed || firstParse {
-		err = ioutil.WriteFile(d.outdir+"/"+task.fileName, newHTML.Bytes(), 0644)
+		fileName := d.outdir + "/" + task.fileName
+		tmpfile := fileName + ".part"
+		err = ioutil.WriteFile(tmpfile, newHTML.Bytes(), 0644)
+		if err == nil {
+			err = os.Rename(tmpfile, fileName)
+		}
 	}
 
 	return err

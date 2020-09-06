@@ -1,8 +1,10 @@
 package downloader
 
 import (
+	"bufio"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -139,6 +141,60 @@ func (d *Downloader) taskByURL(url string) *task {
 	return nil
 }
 
+func (d *Downloader) newMap() (err error) {
+	if d.fMap != nil {
+		return fmt.Errorf("map already open")
+	}
+	d.fMap, err = os.OpenFile(d.fileMap, os.O_CREATE|os.O_RDWR, 0o644)
+	return
+}
+
+func (d *Downloader) openMap() (err error) {
+	if d.fMap != nil {
+		return fmt.Errorf("map already open")
+	}
+	d.fMap, err = os.OpenFile(d.fileMap, os.O_RDWR, 0o644)
+	scanner := bufio.NewScanner(d.fMap)
+	var t *task
+	for scanner.Scan() {
+		line := scanner.Text()
+		if t == nil {
+			t = &task{url: line}
+		} else {
+			s := strings.Split(line, " ")
+			if len(s) != 2 {
+				return fmt.Errorf("map fileName/contentType line incomplete: %s", line)
+			}
+			t.fileName = s[0]
+			t.contentType = s[1]
+			task, exist := d.addTask(t)
+			if exist {
+				task.fileName = t.fileName
+				task.contentType = t.contentType
+				task.UpdateLinks(t.Links(), t.DownLevel(), t.ExtLinks())
+			}
+			t = nil
+		}
+	}
+	return
+}
+
+func (d *Downloader) closeMap() error {
+	if d.fMap == nil {
+		return nil
+	}
+	return d.fMap.Close()
+}
+
+// internal method, during filename generate
+func (d *Downloader) _storeMap(task *task) error {
+	_, err := d.fMap.Write([]byte(task.url + "\n" + task.fileName + " " + task.contentType + "\n"))
+	if err != nil {
+		d.Abort()
+	}
+	return err
+}
+
 // internal method, need lock filesLock before
 func (d *Downloader) _inrTaskFileName(name string, ext string) (string, error) {
 	i := int64(1)
@@ -162,7 +218,7 @@ func (d *Downloader) _genTaskFileName(task *task) error {
 	}
 
 	path := strings.TrimLeft(u.Path, "/")
-	path = strings.ReplaceAll(path, `[~!@#$%^&*()+=\\|\[\]?<>]`, "_")
+	path = strings.ReplaceAll(path, `[~!@#$%^&*()+=\\|\[\]?<> ]`, "_")
 
 	switch d.saveMode {
 	case FlatMode, FlatDirMode:
@@ -193,7 +249,7 @@ func (d *Downloader) _genTaskFileName(task *task) error {
 			}
 		}
 		d._setTaskFileName(task, path)
-		return nil
+		return d._storeMap(task)
 	case DirMode, SiteDirMode:
 		var name string
 		if d.saveMode == SiteDirMode {
@@ -213,7 +269,7 @@ func (d *Downloader) _genTaskFileName(task *task) error {
 			}
 		}
 		d._setTaskFileName(task, path)
-		return nil
+		return d._storeMap(task)
 	}
 
 	return fmt.Errorf("not realized")
@@ -241,9 +297,9 @@ func (d *Downloader) runTask(task *task) bool {
 		switch task.protocol {
 		case HTTP:
 			err = d.httpLoad(task)
-			if err == nil && task.contentType == "text/html" {
-				return d.recheckTask(task)
-			}
+			// if err == nil && task.contentType == "text/html" {
+			// 	return d.recheckTask(task)
+			// }
 		default:
 			task.try = 0
 			log.Warn().Str("url", task.url).Str("file", task.fileName).Msg("protocol not supported")
@@ -260,10 +316,9 @@ func (d *Downloader) runTask(task *task) bool {
 			}
 			log.Error().Str("url", task.url).Str("file", task.fileName).Msg(err.Error())
 			return false
-		} else {
-			log.Info().Str("url", task.url).Str("file", task.fileName).Int64("size", task.size).Msg("done")
-			return true
 		}
+		log.Info().Str("url", task.url).Str("file", task.fileName).Int64("size", task.size).Msg("done")
+		return true
 	}
 	return false
 }
