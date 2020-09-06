@@ -39,6 +39,8 @@ func main() {
 		if err == nil {
 			err = config.SaveConfig(dir, cfg)
 		}
+	case "continue":
+		_, err = d.ExistingLoad(dir, config.MAP_FILE)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: '%s'\n", os.Args[1])
 		os.Exit(1)

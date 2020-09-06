@@ -147,6 +147,23 @@ func (d *Downloader) NewLoad(dir string, fileMap string) (*Downloader, error) {
 	return d, nil
 }
 
+// ExistingLoad builder for new load
+func (d *Downloader) ExistingLoad(dir string, fileMap string) (*Downloader, error) {
+	if dir == "" {
+		return nil, fmt.Errorf("output dir not set")
+	}
+	if d.processed.Len() == 0 {
+		return nil, fmt.Errorf("root url not set")
+	}
+	d.outdir = dir
+	d.fileMap = dir + "/" + fileMap
+	err := d.openMap()
+	if err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
 // Abort set stop flag (but need wait for end running goroutines)
 func (d *Downloader) Abort() {
 	if !d.failed {

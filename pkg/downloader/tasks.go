@@ -286,6 +286,20 @@ func (d *Downloader) recheckTask(task *task) bool {
 }
 
 func (d *Downloader) runTask(task *task) bool {
+	// Check if file exist (continue download)
+	if !task.success && len(task.fileName) > 0 {
+		if s, err := os.Stat(d.outdir + "/" + task.fileName); err == nil {
+			if s.IsDir() {
+				log.Error().Str("url", task.url).Str("file", task.fileName).Msg("must be a file")
+				return false
+			}
+			task.success = true
+		} else if !os.IsNotExist(err) {
+			log.Error().Str("url", task.url).Str("file", task.fileName).Msg(err.Error())
+			return false
+		}
+	}
+
 	if task.success {
 		// already doanload, reload and check
 		if task.protocol == HTTP && task.contentType == "text/html" {
