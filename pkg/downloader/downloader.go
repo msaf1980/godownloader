@@ -49,11 +49,11 @@ func (s *SaveMode) String() string {
 }
 
 // appendFlatDir Append dir to filename in FlatDirMode
-func appendFlatDir(path string, contentType string) string {
+func appendFlatDir(path string, contentType string) (string, string) {
 	var dir string
 	switch contentType {
 	case "", "text/html":
-		return path
+		return path, dir
 	case "text/css":
 		dir = "css/"
 	case "text/javascript", "application/javascript":
@@ -69,7 +69,7 @@ func appendFlatDir(path string, contentType string) string {
 			dir = "download/"
 		}
 	}
-	return dir + path
+	return dir + path, dir
 }
 
 func replaceExtension(path string, contentType string) (string, string, string) {

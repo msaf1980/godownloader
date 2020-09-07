@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/msaf1980/godownloader/pkg/fileutils"
 	"github.com/msaf1980/godownloader/pkg/strutils"
 	"github.com/msaf1980/godownloader/pkg/urlutils"
 
@@ -108,9 +110,9 @@ func newLoadTask(url, rootDir string, links int32, downLevel int32, extLinks int
 }
 
 // internal method, need lock filesLock before
-func (d *Downloader) _setTaskFileName(task *task, path string) {
-	if path != "" {
-		task.fileName = path
+func (d *Downloader) _setTaskFileName(task *task, p string) {
+	if p != "" {
+		task.fileName = p
 		d.files.Set(task.fileName, task)
 	}
 }
@@ -210,6 +212,20 @@ func (d *Downloader) _inrTaskFileName(name string, ext string) (string, error) {
 	}
 }
 
+func mkdir(dir string) error {
+	exist, isDir, err := fileutils.Exist(dir)
+	if err == nil {
+		if exist {
+			if isDir {
+				return nil
+			}
+			return fmt.Errorf("%s is not dir", dir)
+		}
+		err = os.MkdirAll(dir, 0o755)
+	}
+	return err
+}
+
 // internal method, need lock filesLock before
 func (d *Downloader) _genTaskFileName(task *task) error {
 	u, err := urlx.Parse(task.url)
@@ -217,58 +233,78 @@ func (d *Downloader) _genTaskFileName(task *task) error {
 		return err
 	}
 
-	path := strings.TrimLeft(u.Path, "/")
-	path = strings.ReplaceAll(path, `[~!@#$%^&*()+=\\|\[\]?<> ]`, "_")
+	p := strings.TrimLeft(u.Path, "/")
+	p = strutils.TranslitWithoutSpecSymbols(p, '_')
 
 	switch d.saveMode {
 	case FlatMode, FlatDirMode:
 		var name string
-		if len(path) == 0 {
-			path = "index"
+		if len(p) == 0 {
+			p = "index"
 		} else {
-			i := strings.LastIndex(path, "/")
+			i := strings.LastIndex(p, "/")
 			if i > 0 {
-				if i == len(path)-1 {
-					f := strings.LastIndex(path[0:i-1], "/")
-					path = "index-" + path[f+1:i]
+				if i == len(p)-1 {
+					f := strings.LastIndex(p[0:i-1], "/")
+					p = "index-" + p[f+1:i]
 				} else {
-					path = path[i+1:]
+					p = p[i+1:]
 				}
 			}
 		}
 
 		if d.saveMode == FlatDirMode {
-			path = appendFlatDir(path, task.contentType)
-		}
-
-		path, name, ext := replaceExtension(path, task.contentType)
-		if d.taskByFileName(path) != nil {
-			path, err = d._inrTaskFileName(name, ext)
+			var dir string
+			p, _ = appendFlatDir(p, task.contentType)
+			err = mkdir(d.outdir + "/" + dir)
 			if err != nil {
 				return err
 			}
 		}
-		d._setTaskFileName(task, path)
+
+		p, name, ext := replaceExtension(p, task.contentType)
+		if d.taskByFileName(p) != nil {
+			p, err = d._inrTaskFileName(name, ext)
+			if err != nil {
+				return err
+			}
+		}
+		d._setTaskFileName(task, p)
 		return d._storeMap(task)
 	case DirMode, SiteDirMode:
 		var name string
-		if d.saveMode == SiteDirMode {
-			path = strings.ReplaceAll(u.Host, `[~!@#$%^&*()+=\\|\[\]?<>]`, "_") + "/" + path
+
+		if len(p) > 0 && p[0] == '/' {
+			if len(p) == 1 {
+				p = "index"
+			} else {
+				p = p[1:]
+			}
 		}
-		if len(path) == 0 {
-			path = "index"
-		} else if path[len(path)-1] == '/' {
-			path += "index"
+		if len(p) == 0 {
+			p = "index"
+		} else {
+			if p[len(p)-1] == '/' {
+				p += "index"
+			}
 		}
 
-		path, name, ext := replaceExtension(path, task.contentType)
-		if d.taskByFileName(path) != nil {
-			path, err = d._inrTaskFileName(name, ext)
+		if d.saveMode == SiteDirMode {
+			p = strutils.TranslitWithoutSpecSymbols(u.Host, '_') + "/" + p
+		}
+
+		p, name, ext := replaceExtension(p, task.contentType)
+		err = mkdir(path.Dir(d.outdir + "/" + p))
+		if err != nil {
+			return err
+		}
+		if d.taskByFileName(p) != nil {
+			p, err = d._inrTaskFileName(name, ext)
 			if err != nil {
 				return err
 			}
 		}
-		d._setTaskFileName(task, path)
+		d._setTaskFileName(task, p)
 		return d._storeMap(task)
 	}
 
@@ -373,8 +409,8 @@ func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLev
 	if level < 1 {
 		return false
 	}
-	_, path := urlutils.SplitURL(url)
-	dir := urlutils.BaseURLDir(path)
+	_, p := urlutils.SplitURL(url)
+	dir := urlutils.BaseURLDir(p)
 	task := newLoadTask(url, dir, level, downLevel, extLevel, d.retry)
 	//d.processLock.Lock()
 	_, exist := d.addTask(task)

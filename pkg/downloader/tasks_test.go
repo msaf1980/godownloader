@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"io/ioutil"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -165,13 +166,20 @@ func Test_genTaskFileName_FlatDirMode(t *testing.T) {
 	var err error
 	saveMode := FlatDirMode
 	d := NewDownloader(saveMode, 1, time.Second, 1)
-	d.fMap, err = ioutil.TempFile("", "godownloader")
+	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := tmpdir + "/" + "out"
+	_, err = d.NewLoad(dir, "godownloader.map")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
 		d.closeMap()
-		os.Remove(d.fMap.Name())
+		defer os.RemoveAll(tmpdir)
 	}()
 
 	tests := []struct {
@@ -231,13 +239,20 @@ func Test_genTaskFileName_DirMode(t *testing.T) {
 	var err error
 	saveMode := DirMode
 	d := NewDownloader(saveMode, 1, time.Second, 1)
-	d.fMap, err = ioutil.TempFile("", "godownloader")
+	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := tmpdir + "/" + "out"
+	_, err = d.NewLoad(dir, "godownloader.map")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
 		d.closeMap()
-		os.Remove(d.fMap.Name())
+		defer os.RemoveAll(tmpdir)
 	}()
 
 	tests := []struct {
@@ -297,13 +312,20 @@ func Test_genTaskFileName_SiteDirMode(t *testing.T) {
 	var err error
 	saveMode := SiteDirMode
 	d := NewDownloader(saveMode, 1, time.Second, 1)
-	d.fMap, err = ioutil.TempFile("", "godownloader")
+	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := tmpdir + "/" + "out"
+	_, err = d.NewLoad(dir, "godownloader.map")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
 		d.closeMap()
-		os.Remove(d.fMap.Name())
+		defer os.RemoveAll(tmpdir)
 	}()
 
 	tests := []struct {
@@ -347,6 +369,10 @@ func Test_genTaskFileName_SiteDirMode(t *testing.T) {
 		{ // Rewrite *.php with text/html
 			name: "check http://test3.com/index.php?p=12", url: "http://test3.com/index.php?p=12",
 			contentType: "text/html", want: "test3.com/index.html",
+		},
+		{ // Алгоритмы
+			name: "check http://Алгоритмы.com:8080/Алгоритм.html", url: `http://%D0%90%D0%BB.com:8080/%D0%90%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC.html`,
+			contentType: "text/html", want: "al.com_8080/Algoritm.html",
 		},
 	}
 	for _, tt := range tests {
@@ -484,5 +510,37 @@ func TestDownloader_addTask(t *testing.T) {
 				t.Errorf("Downloader.addTask() url got = %s, want %s", task.url, tt.task.url)
 			}
 		})
+	}
+}
+
+func TestDownloader_runTaskNew(t *testing.T) {
+	ts := httptest.NewServer(testHandler())
+	defer ts.Close()
+
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	baseAddr := "http://" + ts.Listener.Addr().String()
+	dir := tmpdir + "/" + "out"
+
+	d := NewDownloader(SiteDirMode, 1, time.Second, 2)
+
+	d.AddRootURL(baseAddr+"/index.html", 2, 0, 0)
+
+	_, err = d.NewLoad(dir, "godownloader.map")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, ok := d.queue.Get()
+	if !ok {
+		t.Fatal("Downloader.queue emphy")
+	}
+	ta := p.(*task)
+	if !d.runTask(ta) {
+		t.Fatal("Downloader.runTask() = false, want true")
 	}
 }

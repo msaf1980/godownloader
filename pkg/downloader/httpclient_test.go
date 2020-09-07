@@ -39,7 +39,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 	saveMode := FlatMode
 	d := NewDownloader(saveMode, 1, time.Second, 2)
 	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
-	_, _ = d.NewLoad(dir, "godownloader.map")
+	_, err = d.NewLoad(dir, "godownloader.map")
 	if err != nil {
 		t.Fatal(err)
 	}
