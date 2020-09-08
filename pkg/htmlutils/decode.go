@@ -24,7 +24,7 @@ func detectBytesCharset(b []byte) string {
 func detectFileCharset(f *os.File) string {
 	data := make([]byte, 1024)
 	n, err := f.Read(data)
-	f.Seek(0, 0)
+	_, _ = f.Seek(0, 0)
 	if err == nil {
 		if _, name, ok := charset.DetermineEncoding(data[0:n], ""); ok {
 			return name

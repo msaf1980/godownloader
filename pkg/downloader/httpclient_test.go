@@ -39,7 +39,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 	saveMode := FlatMode
 	d := NewDownloader(saveMode, 1, time.Second, 2)
 	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
-	d.NewLoad(dir)
+	_, err = d.NewLoad(dir, "godownloader.map")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,23 +151,3 @@ func TestDownloader_httpLoad(t *testing.T) {
 		})
 	}
 }
-
-// func TestDownloader_htmlExtractLinks(t *testing.T) {
-// 	tests := []struct {
-// 		path    string
-// 		wantErr bool
-// 	}{
-// 		{"index.html", false},
-// 	}
-
-// 	d := NewDownloader(FlatMode, 1, time.Second, 2)
-// 	d.outdir = "test"
-// 	for _, tt := range tests {
-// 		t.Run(tt.path, func(t *testing.T) {
-// 			task := task{fileName: tt.path}
-// 			if err := d.htmlExtractLinks(&task); (err != nil) != tt.wantErr {
-// 				t.Errorf("Downloader.htmlExtractLinks() error = %v, wantErr %v", err, tt.wantErr)
-// 			}
-// 		})
-// 	}
-// }

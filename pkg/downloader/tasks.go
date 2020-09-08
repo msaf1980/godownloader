@@ -1,13 +1,17 @@
 package downloader
 
 import (
+	"bufio"
 	"fmt"
 	"math"
+	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/msaf1980/godownloader/pkg/fileutils"
 	"github.com/msaf1980/godownloader/pkg/strutils"
 	"github.com/msaf1980/godownloader/pkg/urlutils"
 
@@ -59,10 +63,7 @@ type task struct {
 }
 
 func (task *task) TryLock() bool {
-	if atomic.CompareAndSwapUint32(&task.lock, 0, 1) {
-		return true
-	}
-	return false
+	return atomic.CompareAndSwapUint32(&task.lock, 0, 1)
 }
 
 func (task *task) UnLock() {
@@ -109,9 +110,9 @@ func newLoadTask(url, rootDir string, links int32, downLevel int32, extLinks int
 }
 
 // internal method, need lock filesLock before
-func (d *Downloader) _setTaskFileName(task *task, path string) {
-	if path != "" {
-		task.fileName = path
+func (d *Downloader) _setTaskFileName(task *task, p string) {
+	if p != "" {
+		task.fileName = p
 		d.files.Set(task.fileName, task)
 	}
 }
@@ -142,6 +143,60 @@ func (d *Downloader) taskByURL(url string) *task {
 	return nil
 }
 
+func (d *Downloader) newMap() (err error) {
+	if d.fMap != nil {
+		return fmt.Errorf("map already open")
+	}
+	d.fMap, err = os.OpenFile(d.fileMap, os.O_CREATE|os.O_RDWR, 0o644)
+	return
+}
+
+func (d *Downloader) openMap() (err error) {
+	if d.fMap != nil {
+		return fmt.Errorf("map already open")
+	}
+	d.fMap, err = os.OpenFile(d.fileMap, os.O_RDWR, 0o644)
+	scanner := bufio.NewScanner(d.fMap)
+	var t *task
+	for scanner.Scan() {
+		line := scanner.Text()
+		if t == nil {
+			t = &task{url: line}
+		} else {
+			s := strings.Split(line, " ")
+			if len(s) != 2 {
+				return fmt.Errorf("map fileName/contentType line incomplete: %s", line)
+			}
+			t.fileName = s[0]
+			t.contentType = s[1]
+			task, exist := d.addTask(t)
+			if exist {
+				task.fileName = t.fileName
+				task.contentType = t.contentType
+				task.UpdateLinks(t.Links(), t.DownLevel(), t.ExtLinks())
+			}
+			t = nil
+		}
+	}
+	return
+}
+
+func (d *Downloader) closeMap() error {
+	if d.fMap == nil {
+		return nil
+	}
+	return d.fMap.Close()
+}
+
+// internal method, during filename generate
+func (d *Downloader) _storeMap(task *task) error {
+	_, err := d.fMap.Write([]byte(task.url + "\n" + task.fileName + " " + task.contentType + "\n"))
+	if err != nil {
+		d.Abort()
+	}
+	return err
+}
+
 // internal method, need lock filesLock before
 func (d *Downloader) _inrTaskFileName(name string, ext string) (string, error) {
 	i := int64(1)
@@ -157,6 +212,20 @@ func (d *Downloader) _inrTaskFileName(name string, ext string) (string, error) {
 	}
 }
 
+func mkdir(dir string) error {
+	exist, isDir, err := fileutils.Exist(dir)
+	if err == nil {
+		if exist {
+			if isDir {
+				return nil
+			}
+			return fmt.Errorf("%s is not dir", dir)
+		}
+		err = os.MkdirAll(dir, 0o755)
+	}
+	return err
+}
+
 // internal method, need lock filesLock before
 func (d *Downloader) _genTaskFileName(task *task) error {
 	u, err := urlx.Parse(task.url)
@@ -164,59 +233,79 @@ func (d *Downloader) _genTaskFileName(task *task) error {
 		return err
 	}
 
-	path := strings.TrimLeft(u.Path, "/")
-	path = strings.ReplaceAll(path, `[~!@#$%^&*()+=\\|\[\]?<>]`, "_")
+	p := strings.TrimLeft(u.Path, "/")
+	p = strutils.TranslitWithoutSpecSymbols(p, '_')
 
 	switch d.saveMode {
 	case FlatMode, FlatDirMode:
 		var name string
-		if len(path) == 0 {
-			path = "index"
+		if len(p) == 0 {
+			p = "index"
 		} else {
-			i := strings.LastIndex(path, "/")
+			i := strings.LastIndex(p, "/")
 			if i > 0 {
-				if i == len(path)-1 {
-					f := strings.LastIndex(path[0:i-1], "/")
-					path = "index-" + path[f+1:i]
+				if i == len(p)-1 {
+					f := strings.LastIndex(p[0:i-1], "/")
+					p = "index-" + p[f+1:i]
 				} else {
-					path = path[i+1:]
+					p = p[i+1:]
 				}
 			}
 		}
 
 		if d.saveMode == FlatDirMode {
-			path = appendFlatDir(path, task.contentType)
-		}
-
-		path, name, ext := replaceExtension(path, task.contentType)
-		if d.taskByFileName(path) != nil {
-			path, err = d._inrTaskFileName(name, ext)
+			var dir string
+			p, _ = appendFlatDir(p, task.contentType)
+			err = mkdir(d.outdir + "/" + dir)
 			if err != nil {
 				return err
 			}
 		}
-		d._setTaskFileName(task, path)
-		return nil
+
+		p, name, ext := replaceExtension(p, task.contentType)
+		if d.taskByFileName(p) != nil {
+			p, err = d._inrTaskFileName(name, ext)
+			if err != nil {
+				return err
+			}
+		}
+		d._setTaskFileName(task, p)
+		return d._storeMap(task)
 	case DirMode, SiteDirMode:
 		var name string
-		if d.saveMode == SiteDirMode {
-			path = strings.ReplaceAll(u.Host, `[~!@#$%^&*()+=\\|\[\]?<>]`, "_") + "/" + path
+
+		if len(p) > 0 && p[0] == '/' {
+			if len(p) == 1 {
+				p = "index"
+			} else {
+				p = p[1:]
+			}
 		}
-		if len(path) == 0 {
-			path = "index"
-		} else if path[len(path)-1] == '/' {
-			path += "index"
+		if len(p) == 0 {
+			p = "index"
+		} else {
+			if p[len(p)-1] == '/' {
+				p += "index"
+			}
 		}
 
-		path, name, ext := replaceExtension(path, task.contentType)
-		if d.taskByFileName(path) != nil {
-			path, err = d._inrTaskFileName(name, ext)
+		if d.saveMode == SiteDirMode {
+			p = strutils.TranslitWithoutSpecSymbols(u.Host, '_') + "/" + p
+		}
+
+		p, name, ext := replaceExtension(p, task.contentType)
+		err = mkdir(path.Dir(d.outdir + "/" + p))
+		if err != nil {
+			return err
+		}
+		if d.taskByFileName(p) != nil {
+			p, err = d._inrTaskFileName(name, ext)
 			if err != nil {
 				return err
 			}
 		}
-		d._setTaskFileName(task, path)
-		return nil
+		d._setTaskFileName(task, p)
+		return d._storeMap(task)
 	}
 
 	return fmt.Errorf("not realized")
@@ -233,6 +322,20 @@ func (d *Downloader) recheckTask(task *task) bool {
 }
 
 func (d *Downloader) runTask(task *task) bool {
+	// Check if file exist (continue download)
+	if !task.success && len(task.fileName) > 0 {
+		if s, err := os.Stat(d.outdir + "/" + task.fileName); err == nil {
+			if s.IsDir() {
+				log.Error().Str("url", task.url).Str("file", task.fileName).Msg("must be a file")
+				return false
+			}
+			task.success = true
+		} else if !os.IsNotExist(err) {
+			log.Error().Str("url", task.url).Str("file", task.fileName).Msg(err.Error())
+			return false
+		}
+	}
+
 	if task.success {
 		// already doanload, reload and check
 		if task.protocol == HTTP && task.contentType == "text/html" {
@@ -244,9 +347,9 @@ func (d *Downloader) runTask(task *task) bool {
 		switch task.protocol {
 		case HTTP:
 			err = d.httpLoad(task)
-			if err == nil && task.contentType == "text/html" {
-				return d.recheckTask(task)
-			}
+			// if err == nil && task.contentType == "text/html" {
+			// 	return d.recheckTask(task)
+			// }
 		default:
 			task.try = 0
 			log.Warn().Str("url", task.url).Str("file", task.fileName).Msg("protocol not supported")
@@ -263,10 +366,9 @@ func (d *Downloader) runTask(task *task) bool {
 			}
 			log.Error().Str("url", task.url).Str("file", task.fileName).Msg(err.Error())
 			return false
-		} else {
-			log.Info().Str("url", task.url).Str("file", task.fileName).Int64("size", task.size).Msg("done")
-			return true
 		}
+		log.Info().Str("url", task.url).Str("file", task.fileName).Int64("size", task.size).Msg("done")
+		return true
 	}
 	return false
 }
@@ -307,8 +409,8 @@ func (d *Downloader) AddRootURL(url string, level int32, downLevel int32, extLev
 	if level < 1 {
 		return false
 	}
-	_, path := urlutils.SplitURL(url)
-	dir := urlutils.BaseURLDir(path)
+	_, p := urlutils.SplitURL(url)
+	dir := urlutils.BaseURLDir(p)
 	task := newLoadTask(url, dir, level, downLevel, extLevel, d.retry)
 	//d.processLock.Lock()
 	_, exist := d.addTask(task)

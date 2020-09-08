@@ -1,6 +1,9 @@
 package downloader
 
 import (
+	"io/ioutil"
+	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -18,9 +21,93 @@ func Test_task_TryLock(t *testing.T) {
 	}
 }
 
+func TestDownloader_Map(t *testing.T) {
+	var err error
+	d := NewDownloader(FlatMode, 1, time.Second, 1)
+	d.fMap, err = ioutil.TempFile("", "godownloader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		d.closeMap()
+		os.Remove(d.fMap.Name())
+	}()
+
+	tests := []*task{
+		{url: "http://test.int/index.html", fileName: "index.html", contentType: "text/html"},
+		{url: "http://test.int/link1.html", fileName: "link1.html", contentType: "text/html"},
+		{url: "http://test.int/1.gif", fileName: "1.gif", contentType: "image/gif"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			err = d._storeMap(tt)
+			if err != nil {
+				t.Fatalf("Downloader._storeMap() error = %v", err)
+			}
+		})
+	}
+
+	// Verify
+	dv := NewDownloader(FlatMode, 1, time.Second, 1)
+
+	dv.AddRootURL("http://test.int/index.html", 1, 0, 0)
+	// Sync test task links
+	tests[0].links = 1
+
+	dv.fileMap = d.fMap.Name()
+	err = dv.openMap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = dv.closeMap()
+	if err != nil {
+		t.Error(err)
+	}
+	if dv.processed.Len() != len(tests) {
+		t.Errorf("map length = %d, want %d", dv.processed.Len(), len(tests))
+	}
+	for _, task := range tests {
+		if lTask := dv.taskByURL(task.url); lTask == nil {
+			t.Errorf("map url %s not found", task.url)
+		} else {
+			if lTask.fileName != task.fileName {
+				t.Errorf("map url %s fileName  = '%s', want '%s'", task.url, lTask.fileName, task.fileName)
+			}
+			if lTask.fileName != task.fileName {
+				t.Errorf("map url %s contentType  = '%s', want '%s'", task.url, lTask.contentType, task.contentType)
+			}
+			links := task.Links()
+			lLinks := lTask.Links()
+			downLevel := task.DownLevel()
+			lDownLevel := lTask.DownLevel()
+			extLinks := task.ExtLinks()
+			lExtLinks := lTask.ExtLinks()
+			if links != lLinks {
+				t.Errorf("map url %s links  = %d, want %d", task.url, lLinks, links)
+			}
+			if downLevel != lDownLevel {
+				t.Errorf("map url %s downLevel  = %d, want %d", task.url, lDownLevel, downLevel)
+			}
+			if extLinks != lExtLinks {
+				t.Errorf("map url %s extLinks  = %d, want %d", task.url, lExtLinks, extLinks)
+			}
+		}
+
+	}
+}
+
 func Test_genTaskFileName_FlatMode(t *testing.T) {
+	var err error
 	saveMode := FlatMode
 	d := NewDownloader(saveMode, 1, time.Second, 1)
+	d.fMap, err = ioutil.TempFile("", "godownloader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		d.closeMap()
+		os.Remove(d.fMap.Name())
+	}()
 
 	tests := []struct {
 		name        string
@@ -76,8 +163,24 @@ func Test_genTaskFileName_FlatMode(t *testing.T) {
 }
 
 func Test_genTaskFileName_FlatDirMode(t *testing.T) {
+	var err error
 	saveMode := FlatDirMode
 	d := NewDownloader(saveMode, 1, time.Second, 1)
+	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := tmpdir + "/" + "out"
+	_, err = d.NewLoad(dir, "godownloader.map")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		d.closeMap()
+		defer os.RemoveAll(tmpdir)
+	}()
 
 	tests := []struct {
 		name        string
@@ -133,8 +236,24 @@ func Test_genTaskFileName_FlatDirMode(t *testing.T) {
 }
 
 func Test_genTaskFileName_DirMode(t *testing.T) {
+	var err error
 	saveMode := DirMode
 	d := NewDownloader(saveMode, 1, time.Second, 1)
+	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := tmpdir + "/" + "out"
+	_, err = d.NewLoad(dir, "godownloader.map")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		d.closeMap()
+		defer os.RemoveAll(tmpdir)
+	}()
 
 	tests := []struct {
 		name        string
@@ -190,8 +309,24 @@ func Test_genTaskFileName_DirMode(t *testing.T) {
 }
 
 func Test_genTaskFileName_SiteDirMode(t *testing.T) {
+	var err error
 	saveMode := SiteDirMode
 	d := NewDownloader(saveMode, 1, time.Second, 1)
+	d.AddRootURL("http://127.0.0.1/", 2, 0, 0)
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := tmpdir + "/" + "out"
+	_, err = d.NewLoad(dir, "godownloader.map")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		d.closeMap()
+		defer os.RemoveAll(tmpdir)
+	}()
 
 	tests := []struct {
 		name        string
@@ -234,6 +369,10 @@ func Test_genTaskFileName_SiteDirMode(t *testing.T) {
 		{ // Rewrite *.php with text/html
 			name: "check http://test3.com/index.php?p=12", url: "http://test3.com/index.php?p=12",
 			contentType: "text/html", want: "test3.com/index.html",
+		},
+		{ // Алгоритмы
+			name: "check http://Алгоритмы.com:8080/Алгоритм.html", url: `http://%D0%90%D0%BB.com:8080/%D0%90%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC.html`,
+			contentType: "text/html", want: "al.com_8080/Algoritm.html",
 		},
 	}
 	for _, tt := range tests {
@@ -338,9 +477,6 @@ func Test_level(t *testing.T) {
 func TestDownloader_addTask(t *testing.T) {
 	d := NewDownloader(FlatMode, 1, time.Second, 1)
 
-	type args struct {
-		t *task
-	}
 	tests := []struct {
 		name  string
 		task  *task
@@ -374,5 +510,37 @@ func TestDownloader_addTask(t *testing.T) {
 				t.Errorf("Downloader.addTask() url got = %s, want %s", task.url, tt.task.url)
 			}
 		})
+	}
+}
+
+func TestDownloader_runTaskNew(t *testing.T) {
+	ts := httptest.NewServer(testHandler())
+	defer ts.Close()
+
+	tmpdir, err := ioutil.TempDir("", "godownloader-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	baseAddr := "http://" + ts.Listener.Addr().String()
+	dir := tmpdir + "/" + "out"
+
+	d := NewDownloader(SiteDirMode, 1, time.Second, 2)
+
+	d.AddRootURL(baseAddr+"/index.html", 2, 0, 0)
+
+	_, err = d.NewLoad(dir, "godownloader.map")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, ok := d.queue.Get()
+	if !ok {
+		t.Fatal("Downloader.queue emphy")
+	}
+	ta := p.(*task)
+	if !d.runTask(ta) {
+		t.Fatal("Downloader.runTask() = false, want true")
 	}
 }

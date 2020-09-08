@@ -30,12 +30,30 @@ const (
 	FlatDirMode
 )
 
+var (
+	saveModeMap = map[string]SaveMode{"site_dir": SiteDirMode, "dir": DirMode, "flat": FlatMode, "flat_dir": FlatDirMode}
+	saveModeStr = []string{"site_dir", "dir", "flat", "flat_dir"}
+)
+
+func (s *SaveMode) Set(value string) error {
+	mode, ok := saveModeMap[strings.ToLower(value)]
+	if ok {
+		*s = mode
+		return nil
+	}
+	return fmt.Errorf("unknown save mode: '%s'", value)
+}
+
+func (s *SaveMode) String() string {
+	return saveModeStr[*s]
+}
+
 // appendFlatDir Append dir to filename in FlatDirMode
-func appendFlatDir(path string, contentType string) string {
+func appendFlatDir(path string, contentType string) (string, string) {
 	var dir string
 	switch contentType {
 	case "", "text/html":
-		return path
+		return path, dir
 	case "text/css":
 		dir = "css/"
 	case "text/javascript", "application/javascript":
@@ -51,7 +69,7 @@ func appendFlatDir(path string, contentType string) string {
 			dir = "download/"
 		}
 	}
-	return dir + path
+	return dir + path, dir
 }
 
 func replaceExtension(path string, contentType string) (string, string, string) {
@@ -65,12 +83,6 @@ func replaceExtension(path string, contentType string) (string, string, string) 
 		ext = ".html"
 	}
 	return name + ext, name, ext
-}
-
-type URL struct {
-	scheme string
-	host   string
-	path   string
 }
 
 // Downloader downloader instance
@@ -88,6 +100,9 @@ type Downloader struct {
 	processed *hashmap.HashMap // lock-free map[url]*task - processed tasks by url
 	filesLock sync.Mutex       // set when generate/insert new filename for task
 	files     *hashmap.HashMap // lock-free map[filename]*task - processed tasks by filename
+
+	fileMap string // map
+	fMap    *os.File
 
 	wg       sync.WaitGroup
 	running  bool
@@ -112,7 +127,7 @@ func NewDownloader(saveMode SaveMode, retry int, timeout time.Duration, maxRedir
 }
 
 // NewLoad builder for new load
-func (d *Downloader) NewLoad(dir string) (*Downloader, error) {
+func (d *Downloader) NewLoad(dir string, fileMap string) (*Downloader, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("output dir not set")
 	}
@@ -124,6 +139,28 @@ func (d *Downloader) NewLoad(dir string) (*Downloader, error) {
 		return nil, err
 	}
 	d.outdir = dir
+	d.fileMap = dir + "/" + fileMap
+	err = d.newMap()
+	if err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// ExistingLoad builder for new load
+func (d *Downloader) ExistingLoad(dir string, fileMap string) (*Downloader, error) {
+	if dir == "" {
+		return nil, fmt.Errorf("output dir not set")
+	}
+	if d.processed.Len() == 0 {
+		return nil, fmt.Errorf("root url not set")
+	}
+	d.outdir = dir
+	d.fileMap = dir + "/" + fileMap
+	err := d.openMap()
+	if err != nil {
+		return nil, err
+	}
 	return d, nil
 }
 
@@ -138,6 +175,11 @@ func (d *Downloader) Abort() {
 // Wait wait for complete
 func (d *Downloader) Wait() bool {
 	d.wg.Wait()
+	err := d.closeMap()
+	if err != nil {
+		d.failed = true
+		log.Error().Str("where", "map").Msg(err.Error())
+	}
 	return d.failed
 }
 
