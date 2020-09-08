@@ -25,6 +25,36 @@ func testHandler() http.Handler {
 	return mux
 }
 
+func verifyFile(t *testing.T, outdir string, resultFile string, srcFile string, baseAddr string) {
+	if strings.HasSuffix(srcFile, ".tpl") {
+		result, err := ioutil.ReadFile(outdir + "/" + resultFile)
+		if err != nil {
+			t.Fatalf("result file read error '%v'", err)
+		}
+		resultHTML := string(result)
+		data, err := ioutil.ReadFile(srcFile)
+		if err != nil {
+			t.Errorf("load template error '%v'", err)
+		} else {
+			want := strings.ReplaceAll(string(data), "{{ Host }}", baseAddr)
+			if want != resultHTML {
+				dmp := diffmatchpatch.New()
+				diffs := dmp.DiffMain(want, resultHTML, false)
+				t.Errorf("result html file mismatched %s, diff\n%s", srcFile, diffs)
+			}
+		}
+	} else {
+		cmp := equalfile.New(nil, equalfile.Options{})
+		equal, err := cmp.CompareFile(srcFile, outdir+"/"+resultFile)
+		if err != nil {
+			t.Errorf("result compare error '%v'", err)
+		} else if !equal {
+			t.Errorf("result file mismatched %s", resultFile)
+		}
+	}
+
+}
+
 func TestDownloader_httpLoad(t *testing.T) {
 	ts := httptest.NewServer(testHandler())
 	defer ts.Close()
@@ -45,8 +75,6 @@ func TestDownloader_httpLoad(t *testing.T) {
 	}
 
 	baseAddr := "http://" + ts.Listener.Addr().String()
-
-	cmp := equalfile.New(nil, equalfile.Options{})
 
 	tests := []struct {
 		task    *task
@@ -105,31 +133,7 @@ func TestDownloader_httpLoad(t *testing.T) {
 				t.Fatalf("Downloader.httpLoad() error = '%v', wantErr '%s'", err, tt.errStr)
 			}
 			if len(tt.orig) > 0 {
-				if strings.HasSuffix(tt.orig, ".tpl") {
-					result, err := ioutil.ReadFile(d.outdir + "/" + tt.task.fileName)
-					if err != nil {
-						t.Fatalf("Downloader.httpLoad() load error '%v'", err)
-					}
-					resultHTML := string(result)
-					data, err := ioutil.ReadFile(tt.orig)
-					if err != nil {
-						t.Errorf("Downloader.httpLoad() load template error '%v'", err)
-					} else {
-						want := strings.ReplaceAll(string(data), "{{ Host }}", baseAddr)
-						if want != resultHTML {
-							dmp := diffmatchpatch.New()
-							diffs := dmp.DiffMain(want, resultHTML, false)
-							t.Errorf("Downloader.httpLoad() result html file mismatched %s, diff\n%s", d.outdir+"/"+tt.task.fileName, diffs)
-						}
-					}
-				} else {
-					equal, err := cmp.CompareFile(tt.orig, d.outdir+"/"+tt.task.fileName)
-					if err != nil {
-						t.Errorf("Downloader.httpLoad() compare error '%v'", err)
-					} else if !equal {
-						t.Errorf("Downloader.httpLoad() result file mismatched %s", d.outdir+"/"+tt.task.fileName)
-					}
-				}
+				verifyFile(t, d.outdir, tt.task.fileName, tt.orig, baseAddr)
 			}
 
 			if len(tt.links) > 0 {

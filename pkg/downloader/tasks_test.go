@@ -529,6 +529,14 @@ func TestDownloader_runTaskNew(t *testing.T) {
 	d := NewDownloader(SiteDirMode, 1, time.Second, 2)
 
 	d.AddRootURL(baseAddr+"/index.html", 2, 0, 0)
+	rootTpl := "test/index.html.tpl"
+	urlQueue := map[string]bool{
+		baseAddr + "/style.css":      true,
+		baseAddr + "/1.gif":          true,
+		baseAddr + "/1.gz":           true,
+		baseAddr + "/link1.html":     true,
+		baseAddr + "/not_found.html": true,
+	}
 
 	_, err = d.NewLoad(dir, "godownloader.map")
 	if err != nil {
@@ -542,5 +550,23 @@ func TestDownloader_runTaskNew(t *testing.T) {
 	ta := p.(*task)
 	if !d.runTask(ta) {
 		t.Fatal("Downloader.runTask() = false, want true")
+	}
+
+	verifyFile(t, d.outdir, ta.fileName, rootTpl, baseAddr)
+	n := 0
+	for {
+		p, ok = d.queue.Get()
+		if !ok {
+			break
+		}
+		ta = p.(*task)
+		_, ok = urlQueue[ta.url]
+		if !ok {
+			t.Errorf("Downloader.runTask() queue unknown url '%s'", ta.url)
+		}
+		n++
+	}
+	if n != len(urlQueue) {
+		t.Fatalf("Downloader.runTask() produce queue len = %d, want %d", n, len(urlQueue))
 	}
 }
